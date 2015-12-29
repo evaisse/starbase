@@ -1,0 +1,1 @@
+@daily root mkdir -p /var/backups/mongodb; mongodump --db todos --out /var/backups/mongodb/$(date +'\%Y-\%m-\%d')
