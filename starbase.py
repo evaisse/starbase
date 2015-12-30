@@ -14,6 +14,7 @@ from fabric.contrib.files import exists, upload_template, sed
 from fabric.colors import green, red
 from fabric.context_managers import cd
 import random
+import binascii
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -69,11 +70,55 @@ else:
     target = settings['servers'][args.target]
 
 
+
+"""
+
+  ____ ___  _   _ _____ ___ ____ 
+ / ___/ _ \| \ | |  ___|_ _/ ___|
+| |  | | | |  \| | |_   | | |  _ 
+| |__| |_| | |\  |  _|  | | |_| |
+ \____\___/|_| \_|_|   |___\____|
+
+
+
+
+"""
+def config_get_domain():
+    # DOMAIN for vhosts
+    if env.get('domain'):
+        return False
+
+    if args.domain:
+        env.domain = args.domain
+    elif target.get('domain'):
+        env.domain = target.get('domain')
+    else:
+        env.domain = prompt('Set domain name :')
+    env.domain = env.domain.lower()
+
+def config_get_email():
+    if env.get('email'):
+        return False
+    # EMAIL for sslcerts 
+    if args.email:
+        env.email = args.email
+    elif target.get('email'):
+        env.email = target.get('email')
+    else:
+        env.email = prompt('SSL cert authority email :')
+    env.email = env.email.lower()
+
+
+
+config_get_domain()
+config_get_email()
+
+
 env.host_string = target['host']
 env.user = target['username']
 env.warn_only = True
 env.settings = settings
-env.app_node_port = 8000 + random.randint(100, 1000)
+env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
 env.app_local_root = os.path.abspath(args.appdir)
 env.disable_known_hosts = True
 
@@ -99,39 +144,6 @@ def which(program):
 
 
 
-"""
-
-  ____ ___  _   _ _____ ___ ____ 
- / ___/ _ \| \ | |  ___|_ _/ ___|
-| |  | | | |  \| | |_   | | |  _ 
-| |__| |_| | |\  |  _|  | | |_| |
- \____\___/|_| \_|_|   |___\____|
-
-
-
-
-"""
-def config_get_domain():
-    # DOMAIN for vhosts
-    if args.domain:
-        env.domain = args.domain
-    elif target.get('domain'):
-        env.domain = target.get('domain')
-    else:
-        env.domain = prompt('Set domain name :')
-    env.domain = env.domain.lower()
-
-def config_get_email():
-    # EMAIL for sslcerts 
-    if args.email:
-        env.email = args.email
-    elif target.get('email'):
-        env.email = target.get('email')
-    else:
-        env.email = prompt('SSL cert authority email :')
-    env.email = env.email.lower()
-
-
 
 """
  ____  _____ _____ _   _ ____  
@@ -155,6 +167,7 @@ def setup_nodejs():
     sudo('add-apt-repository -y ppa:chris-lea/node.js')
     sudo('apt-get -y update')
     sudo('apt-get -y install nodejs')
+    sudo('npm -g install npm@latest')
 
 
 def setup_nginx():
@@ -225,7 +238,7 @@ def setup():
         sudo('apt-get -y update')
         # Base Packages
         sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev g++ make' 
-            + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh')
+            + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh moreutils')
 
         setup_locale()
 
@@ -273,12 +286,13 @@ def setup():
 
 def deploy():
 
+    config_get_email()
     config_get_domain()
     setup_vhost()
 
     print("Start build on " + env.app_local_root)
     local('cd ' + env.app_local_root)
-    local('meteor build .')
+    # local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
     put(env.app_local_root + '/' + filename, '/opt/%(domain)s' % env)
@@ -286,8 +300,12 @@ def deploy():
         sudo("tar -zxf %s" % (filename))
     with cd("/opt/%(domain)s/bundle/programs/server" % env):
         sudo("npm install")
+        sudo("rm -rf npm/npm-bcrypt/node_modules/bcrypt/")
+        sudo("npm install bcrypt")
 
+    
     sudo("service %(domain)s restart" % env)
+    sudo("service nginx reload" % env)
 
 
 def rollback():
