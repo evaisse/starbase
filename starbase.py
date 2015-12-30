@@ -12,6 +12,7 @@ from fabric.contrib.console import confirm
 from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed
 from fabric.colors import green, red
+from fabric.context_managers import cd
 import random
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -146,7 +147,7 @@ def setup_mongodb():
     sudo('echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list')
     sudo('apt-get -y update')
     sudo('apt-get -y install mongodb-org')
-    sudo('service mongod stop')
+    sudo('service mongod start')
 
     template('cron/mongodb', '/etc/cron.d/mongodb-backup')
 
@@ -195,6 +196,13 @@ def setup_vhost():
     sudo('service %(domain)s restart' % env)
 
 
+def setup_locale():
+    sudo('locale-gen "en_US.UTF-8"')
+    sudo('export LANG=en_US.UTF-8')
+    sudo('export LANGUAGE=en_US')
+    sudo('export LC_ALL=en_US.UTF-8')
+    sudo('dpkg-reconfigure locales')
+
 
 """
 Setup server for receiving meteor apps
@@ -215,9 +223,13 @@ def setup():
         sudo('apt-add-repository -y ppa:rwky/redis')
         sudo('apt-add-repository -y ppa:chris-lea/node.js')
         sudo('apt-get -y update')
-        sudo('# Base Packages')
+        # Base Packages
         sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev g++ make' 
             + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh')
+
+        setup_locale()
+
+
 
 
     # HTTPie
@@ -226,7 +238,7 @@ def setup():
 
 
     # Nodejs
-    if not which('node'):
+    if not which('npm'):
         setup_nodejs()
 
 
@@ -262,17 +274,19 @@ def setup():
 def deploy():
 
     config_get_domain()
+    setup_vhost()
 
     print("Start build on " + env.app_local_root)
     local('cd ' + env.app_local_root)
-    # local('meteor build .')
+    local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
     put(env.app_local_root + '/' + filename, '/opt/%(domain)s' % env)
-    sudo("cd /opt/%(domain)s/" % env)
-    sudo("tar -zxf %s" % (filename))
-    sudo("cd /opt/%(domain)s/programs/server" % env)
-    sudo("npm install")
+    with cd("/opt/%s/" % (env.domain)):
+        sudo("tar -zxf %s" % (filename))
+    with cd("/opt/%(domain)s/bundle/programs/server" % env):
+        sudo("npm install")
+
     sudo("service %(domain)s restart" % env)
 
 
