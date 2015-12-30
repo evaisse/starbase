@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from __future__ import with_statement
 
@@ -8,8 +9,9 @@ import argparse
 
 from fabric.api import local, run, sudo, settings, abort, env
 from fabric.contrib.console import confirm
-from fabric.operations import prompt
+from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed
+from fabric.colors import green, red
 import random
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,39 +67,14 @@ if not args.target in targets:
 else:
     target = settings['servers'][args.target]
 
-print args
-
-
-APPDIR = os.path.abspath(args.appdir)
-
-# DOMAIN for vhosts
-if args.domain:
-    DOMAIN = args.domain
-else:
-    DOMAIN = prompt('Set domain name :')
-DOMAIN = DOMAIN.lower()
-
-
-# EMAIL for sslcerts 
-if args.email:
-    EMAIL = args.email
-else:
-    EMAIL = prompt('SSL cert authority email :')
-EMAIL = EMAIL.lower()
-
-
-
-CTXT = {
-    'DOMAIN': DOMAIN,
-    'EMAIL': EMAIL,
-    'HTTP_LOCAL_PORT': 8000 + random.randint(100, 1000),
-    'SETTINGS': settings,
-}
 
 env.host_string = target['host']
 env.user = target['username']
 env.warn_only = True
-
+env.settings = settings
+env.app_node_port = 8000 + random.randint(100, 1000)
+env.app_local_root = os.path.abspath(args.appdir)
+env.disable_known_hosts = True
 
 """
  _   _ _____ ___ _     ____  
@@ -109,7 +86,7 @@ env.warn_only = True
 """
 
 def template(from_path, remote_path):
-    upload_template(template_dir=DIR + '/templates/', filename=from_path, destination=remote_path, context=CTXT, use_sudo=True, use_jinja=True)
+    upload_template(template_dir=DIR + '/templates/', filename=from_path, destination=remote_path, context=env, use_sudo=True, use_jinja=True)
 
 
 def which(program):
@@ -118,6 +95,41 @@ def which(program):
         return False
     else:
         return path
+
+
+
+"""
+
+  ____ ___  _   _ _____ ___ ____ 
+ / ___/ _ \| \ | |  ___|_ _/ ___|
+| |  | | | |  \| | |_   | | |  _ 
+| |__| |_| | |\  |  _|  | | |_| |
+ \____\___/|_| \_|_|   |___\____|
+
+
+
+
+"""
+def config_get_domain():
+    # DOMAIN for vhosts
+    if args.domain:
+        env.domain = args.domain
+    elif target.get('domain'):
+        env.domain = target.get('domain')
+    else:
+        env.domain = prompt('Set domain name :')
+    env.domain = env.domain.lower()
+
+def config_get_email():
+    # EMAIL for sslcerts 
+    if args.email:
+        env.email = args.email
+    elif target.get('email'):
+        env.email = target.get('email')
+    else:
+        env.email = prompt('SSL cert authority email :')
+    env.email = env.email.lower()
+
 
 
 """
@@ -137,8 +149,6 @@ def setup_mongodb():
     sudo('service mongod stop')
 
     template('cron/mongodb', '/etc/cron.d/mongodb-backup')
-
-
 
 def setup_nodejs():
     sudo('add-apt-repository -y ppa:chris-lea/node.js')
@@ -168,21 +178,21 @@ def setup_ssl_certs():
     if not exists('/root/letsencrypt'):
         sudo('git clone https://github.com/letsencrypt/letsencrypt')
     sudo('service nginx stop')
-    sudo('/root/letsencrypt/letsencrypt-auto certonly --standalone --agree-tos --domain %s --email %s' % (DOMAIN, EMAIL))
+    sudo('/root/letsencrypt/letsencrypt-auto certonly --standalone --agree-tos --domain %(domain)s --email %(email)s' % env)
     sudo('service nginx start')
-    template('cron/certs-renewal', '/etc/cron.d/certs-renewal.%s' % DOMAIN)
+    template('cron/certs-renewal', '/etc/cron.d/certs-renewal.%(domain)s' % env)
 
 
 def setup_vhost():
-    template('nginx.vhost.conf', '/etc/nginx/sites-available/%s.conf' % DOMAIN)
-    template('upstart.conf', '/etc/init/%s.conf' % DOMAIN)
-    sudo('ln -fs /etc/nginx/sites-available/%s.conf /etc/nginx/sites-enabled/' % DOMAIN)
+    template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
+    template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
+    sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
-    sudo('mkdir -p /var/log/%s' % DOMAIN)
-    sudo('mkdir -p /opt/%s/bundle' % DOMAIN)
-    if not exists('/opt/%s/bundle/main.js' % DOMAIN):
-        template('defaultapp.js', '/opt/%s/bundle/main.js' % DOMAIN)
-    sudo('service %s restart' % DOMAIN)
+    sudo('mkdir -p /var/log/%(domain)s' % env)
+    sudo('mkdir -p /opt/%(domain)s/bundle' % env)
+    if not exists('/opt/%(domain)s/bundle/main.js' % env):
+        template('defaultapp.js', '/opt/%(domain)s/bundle/main.js' % env)
+    sudo('service %(domain)s restart' % env)
 
 
 
@@ -193,6 +203,8 @@ def setup():
 
     sudo('cd /root') # go to /root
 
+    config_get_email()
+    config_get_domain()
 
     # base build tools
     if not which('curl'):
@@ -204,7 +216,7 @@ def setup():
         sudo('apt-add-repository -y ppa:chris-lea/node.js')
         sudo('apt-get -y update')
         sudo('# Base Packages')
-        sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev ' 
+        sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev g++ make' 
             + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh')
 
 
@@ -223,7 +235,7 @@ def setup():
 
 
     # SSL certs builder
-    if not exists('/etc/letsencrypt/live/%s/fullchain.pem' % DOMAIN):
+    if not exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env):
         setup_ssl_certs()
 
 
@@ -248,20 +260,24 @@ def setup():
 """
 
 def deploy():
-    local('cd ' + APPDIR)
-    local('meteor build .')
-    pass
+
+    config_get_domain()
+
+    print("Start build on " + env.app_local_root)
+    local('cd ' + env.app_local_root)
+    # local('meteor build .')
+    print(green("build complete, lets teleport this !"))
+    filename = os.path.basename(env.app_local_root) + '.tar.gz'
+    put(env.app_local_root + '/' + filename, '/opt/%(domain)s' % env)
+    sudo("cd /opt/%(domain)s/" % env)
+    sudo("tar -zxf %s" % (filename))
+    sudo("cd /opt/%(domain)s/programs/server" % env)
+    sudo("npm install")
+    sudo("service %(domain)s restart" % env)
 
 
 def rollback():
     pass
-
-
-
-
-
-
-
 
 
 AVAILABLE_COMMANDS = [
@@ -271,7 +287,7 @@ AVAILABLE_COMMANDS = [
 ]
 
 
-if __name__ == "__main__":
+def main():
     if args.command not in [fn.__name__ for fn in AVAILABLE_COMMANDS]:
         abort('invalid command %s, should be one of : %s' % (args.command, AVAILABLE_COMMANDS))
     else:
@@ -280,54 +296,5 @@ if __name__ == "__main__":
 
 
 
-
-"""
-
-su root
-
-cd ~
-
-
-apt-get update
-apt-get upgrade
-
-
-apt-get install -y software-properties-common
-
-apt-add-repository ppa:nginx/stable -y
-apt-add-repository ppa:rwky/redis -y
-apt-add-repository ppa:chris-lea/node.js -y
-
-apt-get update
-# Base Packages
-
-apt-get install -y build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev \
-make python-pip supervisor ufw unattended-upgrades unzip whois zsh
-
-# Install Python Httpie
-
-pip install httpie
-
-# nodejs builds
-add-apt-repository ppa:chris-lea/node.js -y
-apt-get update
-apt-get install -y nodejs
-
-# ssl creation
-git clone https://github.com/letsencrypt/letsencrypt
-./letsencrypt-auto certonly --standalone --verbose --email -d 
-
-
-# server build
-apt-get install nginx
-mkdir /etc/nginx/ssl
-chmod 0700 /etc/nginx/ssl
-
-# mongodb
-apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10
-echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list
-apt-get update
-
-apt-get install -y mongodb-org
-service mongod stop
-"""
+if __name__ == "__main__":
+    main()
