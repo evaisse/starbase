@@ -203,10 +203,25 @@ def setup_vhost():
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
     sudo('mkdir -p /var/log/%(domain)s' % env)
-    sudo('mkdir -p /opt/%(domain)s/bundle' % env)
+    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs}' % env)
     if not exists('/opt/%(domain)s/bundle/main.js' % env):
         template('defaultapp.js', '/opt/%(domain)s/bundle/main.js' % env)
     sudo('service %(domain)s restart' % env)
+
+
+
+def setup_elasticsearch():
+    if exists('/opt/%(domain)s/config/elasticsearch.yml' % env):
+        return
+
+    sudo('add-apt-repository -y ppa:webupd8team/java')
+    sudo('apt-get -y update')
+    sudo('apt-get -y install oracle-java8-installer')
+    sudo('wget -qO - https://packages.elastic.co/GPG-KEY-elasticsearch | apt-key add -')
+    sudo('echo "deb http://packages.elastic.co/elasticsearch/2.x/debian stable main" | tee -a /etc/apt/sources.list.d/elasticsearch-2.x.list')
+    sudo('apt-get -y update')
+    sudo('apt-get -y install elasticsearch')
+
 
 
 def setup_locale():
@@ -239,7 +254,6 @@ def setup():
         # Base Packages
         sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev g++ make' 
             + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh moreutils')
-
         setup_locale()
 
 
