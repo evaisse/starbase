@@ -26,6 +26,9 @@ setup(
     entry_points={
         'console_scripts': ['starbase = starbase:main']
     },
+    package_data={
+        '': ['templates/*'],
+    },
     zip_safe=False,
     platforms='any',
     classifiers=[

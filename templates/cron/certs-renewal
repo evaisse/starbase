@@ -1,1 +1,1 @@
-@monthly root service nginx stop; /root/letsencrypt/letsencrypt-auto certonly --standalone --renew-by-default --agree-tos --domain {{ domain }} --email {{ email }};service nginx start
+@weekly root /usr/local/lib/letsencrypt/letsencrypt-auto certonly --webroot -w /var/www/letsencrypt/ --renew-by-default --agree-tos --domain {{ domain }} --email {{ email }}

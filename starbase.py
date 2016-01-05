@@ -178,23 +178,27 @@ def setup_nginx():
     # send default nginx config
     template('nginx.global.conf', '/etc/nginx/nginx.conf')
     template('index.html', '/var/www/html/index.html')
+    
     # # default site if none found
     if not exists('nginx.default.conf'):
         template('nginx.default.conf', '/etc/nginx/sites-available/default.conf')
         sudo('ln -fs /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/')
+
     sudo('service nginx start')
     
+    # build better cypher for SSL A+ grade ssl labs
     if not exists('/etc/nginx/dhparams.2048.pem'):
         sudo('openssl dhparam -out /etc/nginx/dhparams.2048.pem 2048')
 
 
 def setup_ssl_certs():
-    if not exists('/root/letsencrypt'):
-        sudo('git clone https://github.com/letsencrypt/letsencrypt')
-    sudo('service nginx stop')
-    sudo('/root/letsencrypt/letsencrypt-auto certonly --standalone --agree-tos --domain %(domain)s --email %(email)s' % env)
-    sudo('service nginx start')
+    if not exists('/opt/letsencrypt'):
+        sudo('git clone https://github.com/letsencrypt/letsencrypt /usr/local/lib/letsencrypt')
+        sudo('mkdir -p /var/www/letsencrypt/%(domain)s' % env)
+    sudo('/usr/local/lib/letsencrypt/letsencrypt-auto certonly --webroot -w /var/www/letsencrypt/ --agree-tos --domain %(domain)s --email %(email)s' % env)
     template('cron/certs-renewal', '/etc/cron.d/certs-renewal.%(domain)s' % env)
+    template('nginx.letsencrypt.conf', '/etc/nginx/conf.d/letsencrypt.conf')
+    sudo('service nginx reload')
 
 
 def setup_vhost():
@@ -209,11 +213,9 @@ def setup_vhost():
     sudo('service %(domain)s restart' % env)
 
 
-
 def setup_elasticsearch():
     if exists('/opt/%(domain)s/config/elasticsearch.yml' % env):
         return
-
     sudo('add-apt-repository -y ppa:webupd8team/java')
     sudo('apt-get -y update')
     sudo('apt-get -y install oracle-java8-installer')
@@ -221,7 +223,6 @@ def setup_elasticsearch():
     sudo('echo "deb http://packages.elastic.co/elasticsearch/2.x/debian stable main" | tee -a /etc/apt/sources.list.d/elasticsearch-2.x.list')
     sudo('apt-get -y update')
     sudo('apt-get -y install elasticsearch')
-
 
 
 def setup_locale():
@@ -286,6 +287,17 @@ def setup():
     setup_vhost()
 
 
+
+
+
+"""
+ ___ __  __ ____   ___  ____ _____      __  _______  ______   ___  ____ _____ 
+|_ _|  \/  |  _ \ / _ \|  _ \_   _|    / / | ____\ \/ /  _ \ / _ \|  _ \_   _|
+ | || |\/| | |_) | | | | |_) || |     / /  |  _|  \  /| |_) | | | | |_) || |  
+ | || |  | |  __/| |_| |  _ < | |    / /   | |___ /  \|  __/| |_| |  _ < | |  
+|___|_|  |_|_|    \___/|_| \_\|_|   /_/    |_____/_/\_\_|    \___/|_| \_\|_|  
+                                                                              
+"""
 
 
 
