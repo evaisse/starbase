@@ -13,11 +13,11 @@ from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed
 from fabric.colors import green, red
 from fabric.context_managers import cd
+
 import random
 import binascii
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 parser = argparse.ArgumentParser(description='Deploy or some integers.')
 
@@ -26,6 +26,7 @@ parser.add_argument('-e', '--env',
                     help='Target environment to execute command, (by default first env)',
                     dest="target",
                     default=None)
+
 
 def add_base_args(parser):
     parser.add_argument('-a', '--app', 
@@ -383,12 +384,15 @@ def deploy():
 
 
 
+
+
 def rollback():
     pass
 
 
 
 AVAILABLE_COMMANDS = [
+    develop,
     setup,
     deploy,
     rollback,
