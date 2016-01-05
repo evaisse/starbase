@@ -21,33 +21,52 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 
 parser = argparse.ArgumentParser(description='Deploy or some integers.')
 
-parser.add_argument('target', type=str, 
-                    help='Target to execute command')
-parser.add_argument('command', type=str, 
-                    help='Command to execute')
-parser.add_argument('-H', '--host', dest='hostname', 
-                    help='Host to connect to')
-parser.add_argument('-a', '--app', dest='appdir', 
-                    default=os.getcwd(),
-                    help='Meteor app directory')
-parser.add_argument('-i', '--identity', dest='sshkey', 
-                    default=False,
-                    help='SSH key path')
-parser.add_argument('-p', '--port', dest='sshport', 
-                    default=False,
-                    help='SSH key path')
-parser.add_argument('--domain', dest='domain', 
-                    default=False,
-                    help='Vhost domain')
-parser.add_argument('--email', dest='email', 
-                    default=False,
-                    help='SSL certs email & administrative contact')
+parser.add_argument('-e', '--env', 
+                    type=str, 
+                    help='Target environment to execute command, (by default first env)',
+                    dest="target",
+                    default=None)
+
+def add_base_args(parser):
+    parser.add_argument('-a', '--app', 
+                        dest='appdir', 
+                        default=os.getcwd(),
+                        help='Meteor app directory, default cwd (%s)' % os.getcwd())
+    parser.add_argument('-H', '--host', 
+                        dest='hostname', 
+                        help='Host to connect to')
+    parser.add_argument('-i', '--identity', 
+                        dest='sshkey', 
+                        default=False,
+                        help='SSH key path')
+    parser.add_argument('-p', '--port', 
+                        dest='sshport',
+                        default=False,
+                        help='SSH port')
+    parser.add_argument('--domain', 
+                        dest='domain', 
+                        default=False,
+                        help='Vhost domain')
+    parser.add_argument('--email', 
+                        dest='email', 
+                        default=False,
+                        help='SSL certs email & administrative contact')
 
 
+subparsers = parser.add_subparsers(title='sub-command', description='Command to launch', dest="command")
 
+parser_deploy = subparsers.add_parser('deploy', help='Deploy to remote target')
+add_base_args(parser_deploy)
+
+
+parser_restore = subparsers.add_parser('restore', help='Restore MongoDB dump to target')
+parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+add_base_args(parser_restore)
 
 
 args = parser.parse_args()
+
+print args
 
 if not os.path.exists(args.appdir + '/.meteor'):
     abort('''
@@ -64,6 +83,9 @@ settings = json.load(open(args.appdir + '/settings.json', 'r'))
 targets = settings.get('servers').keys();
 
 #
+if args.target == None:
+    args.target = targets[0]
+
 if not args.target in targets:
     abort('Invalid target name, should be in %s' % targets)
 else:
@@ -121,6 +143,14 @@ env.settings = settings
 env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
 env.app_local_root = os.path.abspath(args.appdir)
 env.disable_known_hosts = True
+
+
+for k, v in settings.get('env', {}).items():
+    env[k] = v
+
+for k, v in target.get('env', {}).items():
+    env[k] = v
+
 
 """
  _   _ _____ ___ _     ____  
@@ -300,6 +330,24 @@ def setup():
 """
 
 
+def backup():
+    pass
+
+def restore():
+    from urlparse import urlsplit
+    mongoinfo = urlsplit(env.MONGO_URL)._asdict()
+    env.fpath = fpath = args.mongodumpzip
+    env.fname = os.path.basename(fpath)
+    env.dbname = mongoinfo.get('path').strip('/')
+    env.dbhost = mongoinfo.get('netloc').strip('/')
+    put(env.fpath, "/tmp/%s" % env.fname)
+    sudo("unzip /tmp/%s" % env.fname)
+    sudo("mongorestore dump/%(dbname)s --host %(dbhost)s --db %(dbname)s --drop" % env)
+    sudo("rm /tmp/%s" % env.fname)
+    pass
+
+
+
 
 """
  ____  _____ ____  _     _____   __
@@ -334,20 +382,24 @@ def deploy():
     sudo("service nginx reload" % env)
 
 
+
 def rollback():
     pass
+
 
 
 AVAILABLE_COMMANDS = [
     setup,
     deploy,
-    rollback
+    rollback,
+    backup,
+    restore,
 ]
 
 
 def main():
     if args.command not in [fn.__name__ for fn in AVAILABLE_COMMANDS]:
-        abort('invalid command %s, should be one of : %s' % (args.command, AVAILABLE_COMMANDS))
+        abort('invalid command %s, should be one of : %s' % (args.command, ", ".join([cmd.__name__ for cmd in AVAILABLE_COMMANDS])))
     else:
         cmds = [fn.__name__ for fn in AVAILABLE_COMMANDS]
         AVAILABLE_COMMANDS[cmds.index(args.command)]()
