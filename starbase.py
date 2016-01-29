@@ -12,7 +12,7 @@ from fabric.contrib.console import confirm
 from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed
 from fabric.colors import green, red
-from fabric.context_managers import cd
+from fabric.context_managers import cd, shell_env
 
 import random
 import binascii
@@ -59,9 +59,12 @@ subparsers = parser.add_subparsers(title='sub-command', description='Command to 
 parser_deploy = subparsers.add_parser('deploy', help='Deploy to remote target')
 add_base_args(parser_deploy)
 
-
 parser_restore = subparsers.add_parser('restore', help='Restore MongoDB dump to target')
 parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+add_base_args(parser_restore)
+
+parser_restore = subparsers.add_parser('develop', help='Run local env regarding settings.json ENV')
+# parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
 add_base_args(parser_restore)
 
 
@@ -352,6 +355,14 @@ def mongo_restore():
 
 
 
+def develop():
+    env_vars = settings.get('env', {})
+    if settings.get('servers') and settings['servers'].get('local'):
+        env_vars.update(settings['servers']['local'].get('env', {}))
+    with shell_env(**env_vars):
+        local('meteor')
+
+
 
 """
  ____  _____ ____  _     _____   __
@@ -395,7 +406,7 @@ def rollback():
 
 
 AVAILABLE_COMMANDS = [
-    # develop,
+    develop,
     # setup_mongo, # setup mongo only with remote acess @todo
     setup,
     deploy,
