@@ -139,6 +139,9 @@ config_get_email()
 
 env.host_string = target['host']
 env.user = target['username']
+if target.get('pem', False):
+    env.key_filename = target['pem']
+
 env.warn_only = True
 env.settings = settings
 env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
@@ -331,10 +334,10 @@ def setup():
 """
 
 
-def backup():
+def mongo_backup():
     pass
 
-def restore():
+def mongo_restore():
     from urlparse import urlsplit
     mongoinfo = urlsplit(env.MONGO_URL)._asdict()
     env.fpath = fpath = args.mongodumpzip
@@ -367,7 +370,7 @@ def deploy():
 
     print("Start build on " + env.app_local_root)
     local('cd ' + env.app_local_root)
-    # local('meteor build .')
+    local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
     put(env.app_local_root + '/' + filename, '/opt/%(domain)s' % env)
@@ -392,12 +395,13 @@ def rollback():
 
 
 AVAILABLE_COMMANDS = [
-    develop,
+    # develop,
+    # setup_mongo, # setup mongo only with remote acess @todo
     setup,
     deploy,
     rollback,
-    backup,
-    restore,
+    mongo_backup,
+    mongo_restore,
 ]
 
 
