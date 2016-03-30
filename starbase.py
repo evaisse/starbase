@@ -208,7 +208,7 @@ def setup_nodejs():
 
 
 def setup_nginx():
-    sudo('apt-add-repository -y ppa:nginx/development') # on des oufs
+    sudo('apt-add-repository -y ppa:nginx/development') # on est des oufs
     sudo('apt-get -y update')
     sudo('apt-get -y install nginx')
     sudo('service nginx stop')
