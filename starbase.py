@@ -17,83 +17,9 @@ from fabric.context_managers import cd, shell_env
 import random
 import binascii
 
+
+
 DIR = os.path.dirname(os.path.abspath(__file__))
-
-parser = argparse.ArgumentParser(description='Deploy or some integers.')
-
-parser.add_argument('-e', '--env', 
-                    type=str, 
-                    help='Target environment to execute command, (by default first env)',
-                    dest="target",
-                    default=None)
-
-
-def add_base_args(parser):
-    parser.add_argument('-a', '--app', 
-                        dest='appdir', 
-                        default=os.getcwd(),
-                        help='Meteor app directory, default cwd (%s)' % os.getcwd())
-    parser.add_argument('-H', '--host', 
-                        dest='hostname', 
-                        help='Host to connect to')
-    parser.add_argument('-i', '--identity', 
-                        dest='sshkey', 
-                        default=False,
-                        help='SSH key path')
-    parser.add_argument('-p', '--port', 
-                        dest='sshport',
-                        default=False,
-                        help='SSH port')
-    parser.add_argument('--domain', 
-                        dest='domain', 
-                        default=False,
-                        help='Vhost domain')
-    parser.add_argument('--email', 
-                        dest='email', 
-                        default=False,
-                        help='SSL certs email & administrative contact')
-
-
-subparsers = parser.add_subparsers(title='sub-command', description='Command to launch', dest="command")
-
-parser_deploy = subparsers.add_parser('deploy', help='Deploy to remote target')
-add_base_args(parser_deploy)
-
-parser_restore = subparsers.add_parser('restore', help='Restore MongoDB dump to target')
-parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
-add_base_args(parser_restore)
-
-parser_restore = subparsers.add_parser('develop', help='Run local env regarding settings.json ENV')
-# parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
-add_base_args(parser_restore)
-
-
-args = parser.parse_args()
-
-print args
-
-if not os.path.exists(args.appdir + '/.meteor'):
-    abort('''
-    Invalid meteor project, you must specify a valid meteor project path (look for .meteor) using -a --app or run commands in meteor application
-    ''')
-
-if not os.path.exists(args.appdir + '/settings.json'):
-    abort('''
-    Invalid meteor settings file, you must create a valid settings.json file in your meteor project
-    ''')
-
-settings = json.load(open(args.appdir + '/settings.json', 'r'))
-
-targets = settings.get('servers').keys();
-
-#
-if args.target == None:
-    args.target = targets[0]
-
-if not args.target in targets:
-    abort('Invalid target name, should be in %s' % targets)
-else:
-    target = settings['servers'][args.target]
 
 
 
@@ -134,29 +60,6 @@ def config_get_email():
         env.email = prompt('SSL cert authority email :')
     env.email = env.email.lower()
 
-
-
-config_get_domain()
-config_get_email()
-
-
-env.host_string = target['host']
-env.user = target['username']
-if target.get('pem', False):
-    env.key_filename = target['pem']
-
-env.warn_only = True
-env.settings = settings
-env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
-env.app_local_root = os.path.abspath(args.appdir)
-env.disable_known_hosts = True
-
-
-for k, v in settings.get('env', {}).items():
-    env[k] = v
-
-for k, v in target.get('env', {}).items():
-    env[k] = v
 
 
 """
@@ -338,6 +241,7 @@ def setup():
 
 
 def mongo_backup():
+
     pass
 
 def mongo_restore():
@@ -362,6 +266,22 @@ def develop():
     with shell_env(**env_vars):
         local('meteor')
 
+"""
+  _____ ____  _   _ ______ _____ _____ 
+ / ____/ __ \| \ | |  ____|_   _/ ____|
+| |   | |  | |  \| | |__    | || |  __ 
+| |   | |  | | . ` |  __|   | || | |_ |
+| |___| |__| | |\  | |     _| || |__| |
+ \_____\____/|_| \_|_|    |_____\_____|
+                                       
+"""
+
+
+def environment_var(*args):
+
+    print args
+    pass
+    
 
 
 """
@@ -397,33 +317,124 @@ def deploy():
     sudo("service nginx reload" % env)
 
 
-
-
-
 def rollback():
     pass
 
 
 
-AVAILABLE_COMMANDS = [
-    develop,
-    # setup_mongo, # setup mongo only with remote acess @todo
-    setup,
-    deploy,
-    rollback,
-    mongo_backup,
-    mongo_restore,
-]
-
-
-def main():
-    if args.command not in [fn.__name__ for fn in AVAILABLE_COMMANDS]:
-        abort('invalid command %s, should be one of : %s' % (args.command, ", ".join([cmd.__name__ for cmd in AVAILABLE_COMMANDS])))
-    else:
-        cmds = [fn.__name__ for fn in AVAILABLE_COMMANDS]
-        AVAILABLE_COMMANDS[cmds.index(args.command)]()
-
-
-
 if __name__ == "__main__":
-    main()
+
+    parser = argparse.ArgumentParser(description='Deploy or some integers.')
+    parser.add_argument('-e', '--env', 
+                        type=str, 
+                        help='Target environment to execute command, (by default first env)',
+                        dest="target",
+                        default=None)
+
+
+    def add_base_args(parser):
+        parser.add_argument('-a', '--app', 
+                            dest='appdir', 
+                            default=os.getcwd(),
+                            help='Meteor app directory, default cwd (%s)' % os.getcwd())
+        parser.add_argument('-H', '--host', 
+                            dest='hostname', 
+                            help='Host to connect to')
+        parser.add_argument('-i', '--identity', 
+                            dest='sshkey', 
+                            default=False,
+                            help='SSH key path')
+        parser.add_argument('-p', '--port', 
+                            dest='sshport',
+                            default=False,
+                            help='SSH port')
+        parser.add_argument('--domain', 
+                            dest='domain', 
+                            default=False,
+                            help='Vhost domain')
+        parser.add_argument('--email', 
+                            dest='email', 
+                            default=False,
+                            help='SSL certs email & administrative contact')
+
+
+    subparsers = parser.add_subparsers(title='sub-command', description='Command to launch', dest="command")
+
+    parser_deploy = subparsers.add_parser('deploy', help='Deploy to remote target')
+    add_base_args(parser_deploy)
+
+    parser_restore = subparsers.add_parser('restore', help='Restore MongoDB dump to target')
+    parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    add_base_args(parser_restore)
+
+    parser_restore = subparsers.add_parser('develop', help='Run local env regarding settings.json ENV')
+    # parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    add_base_args(parser_restore)
+
+    parser_restore = subparsers.add_parser('env', help='Store & retrieve remote env vars')
+    # parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    add_base_args(parser_restore)
+
+    args = parser.parse_args()
+
+    COMMANDS = {
+        "develop": develop,
+        "setup": setup,
+        "deploy": deploy,
+        "rollback": rollback,
+        "env": environment_var,
+        "mongo_backup": mongo_backup,
+        "mongo_restore": mongo_restore,
+    }
+
+    if not os.path.exists(args.appdir + '/.meteor'):
+        abort('''
+        Invalid meteor project, you must specify a valid meteor project path (look for .meteor) using -a --app or run commands in meteor application
+        ''')
+
+    if not os.path.exists(args.appdir + '/settings.json'):
+        abort('''
+        Invalid meteor settings file, you must create a valid settings.json file in your meteor project
+        ''')
+
+    settings = json.load(open(args.appdir + '/settings.json', 'r'))
+
+    targets = settings.get('servers').keys();
+
+    #
+    if args.target == None:
+        args.target = targets[0]
+
+    if not args.target in targets:
+        abort('Invalid target name, should be in %s' % targets)
+    else:
+        target = settings['servers'][args.target]
+
+
+    config_get_domain()
+    config_get_email()
+
+
+    env.host_string = target['host']
+    env.user = target['username']
+    if target.get('pem', False):
+        env.key_filename = target['pem']
+
+    env.warn_only = True
+    env.settings = settings
+    env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
+    env.app_local_root = os.path.abspath(args.appdir)
+    env.disable_known_hosts = True
+
+
+    for k, v in settings.get('env', {}).items():
+        env[k] = v
+
+    for k, v in target.get('env', {}).items():
+        env[k] = v
+
+
+    COMMANDS[args.command](args)
+
+
+
