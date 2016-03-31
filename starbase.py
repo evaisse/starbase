@@ -24,17 +24,14 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 """
-
   ____ ___  _   _ _____ ___ ____ 
  / ___/ _ \| \ | |  ___|_ _/ ___|
 | |  | | | |  \| | |_   | | |  _ 
 | |__| |_| | |\  |  _|  | | |_| |
  \____\___/|_| \_|_|   |___\____|
 
-
-
-
 """
+
 def config_get_domain():
     # DOMAIN for vhosts
     if env.get('domain'):
@@ -277,11 +274,19 @@ def develop():
 """
 
 
-def environment_var(*args):
+def environment_var(args):
+    if not args.value:
+        return environment_get_var(args)
+    else:
+        return environment_set_var(args)
 
-    print args
-    pass
-    
+
+def environment_get_var(args):
+    print sudo("echo $%s" % args.key)
+
+def environment_set_var(args):
+    print sudo("%s=%s; export %s" % (args.key, args.value, args.key))
+
 
 
 """
@@ -304,8 +309,8 @@ def deploy():
     local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
-    put(env.app_local_root + '/' + filename, '/opt/%(domain)s' % env)
-    with cd("/opt/%s/" % (env.domain)):
+    put(env.app_local_root + '/' + filename, '/opt/%(domain)s/releases/' % env)
+    with cd("/opt/%s/releases/" % (env.domain)):
         sudo("tar -zxf %s" % (filename))
     with cd("/opt/%(domain)s/bundle/programs/server" % env):
         sudo("npm install")
@@ -318,6 +323,7 @@ def deploy():
 
 
 def rollback():
+
     pass
 
 
@@ -372,7 +378,8 @@ if __name__ == "__main__":
     add_base_args(parser_restore)
 
     parser_restore = subparsers.add_parser('env', help='Store & retrieve remote env vars')
-    # parser_restore.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    parser_restore.add_argument('key', type=str, help='environment key')
+    parser_restore.add_argument('value', type=str, help='environment key value', default=None, nargs='?')
     add_base_args(parser_restore)
 
     args = parser.parse_args()
@@ -435,6 +442,3 @@ if __name__ == "__main__":
 
 
     COMMANDS[args.command](args)
-
-
-

@@ -17,7 +17,7 @@ features
 
  - Backup / Restore Mongodb instance
 
- - Easy ENV configuration 
+ - Easy ENV configuration for private values (AWS keys, secrets, ...)
  - Run local meteor app with settings.json
 
  - easy to extends via your own fabfiles command
@@ -27,6 +27,6 @@ features
 Notes
 ---
 
-
+ - https://help.ubuntu.com/community/EnvironmentVariables
  - OPLOG: A TAIL OF WONDER AND WOE  - http://adammonsen.com/post/1314
  - http://joshowens.me/building-your-own-meteor-galaxy-hosting-setup/
