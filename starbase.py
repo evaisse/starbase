@@ -4,6 +4,7 @@
 from __future__ import with_statement
 
 import os
+import datetime
 import commentjson as json
 import argparse
 
@@ -106,7 +107,7 @@ def setup_tools():
 
     sudo('mkdir -p /root/.starbase/')
 
-    if exists("/root/.starbase/version") and sudo("cat /root/.starbase/version") == RELEASE_VERSION and args:
+    if exists("/root/.starbase/version") and sudo("cat /root/.starbase/version") == RELEASE_VERSION:
         return
 
     sudo('echo "" >> /etc/hosts')
@@ -235,16 +236,13 @@ def setup_meteor():
     if not which('mongo'):
         setup_mongodb()
 
-
-    # SSL certs builder
-    if not exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env):
-        setup_ssl_certs()
-
-
     # HTTP frontend
     if not exists('/etc/nginx'):
         setup_nginx()
 
+    # SSL certs builder
+    if not exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env):
+        setup_ssl_certs()
 
     setup_vhost()
 
@@ -339,7 +337,7 @@ def deploy():
     local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
-    put(env.app_local_root + '/' + filename, '/opt/%(domain)s/releases/' % env)
+    put(env.app_local_root + '/' + filename, '/opt/%(domain)s/releases/%(deployment_id)s' % env)
     with cd("/opt/%s/releases/" % (env.domain)):
         sudo("tar -zxf %s" % (filename))
     with cd("/opt/%(domain)s/bundle/programs/server" % env):
@@ -452,8 +450,10 @@ if __name__ == "__main__":
     config_get_domain()
     config_get_email()
 
+    env.deployment_id = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
     env.host_string = target['host']
     env.user = target['username']
+
     if target.get('pem', False):
         env.key_filename = target['pem']
 
