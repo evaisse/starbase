@@ -16,10 +16,12 @@ from fabric.context_managers import cd, shell_env
 
 import random
 import binascii
-
+import dotenv
 
 
 DIR = os.path.dirname(os.path.abspath(__file__))
+RELEASE_VERSION = "0.1.0"
+
 
 
 
@@ -91,6 +93,52 @@ def which(program):
                                
 """
 
+
+def setup_struct():
+    if exists("/opt/%(domain)s" % env):
+        return False
+    sudo('mkdir -p /var/log/%(domain)s' % env)
+    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs,backup,releases}' % env)
+    sudo('touch /opt/%(domain)s/.env' % env)
+
+
+def setup_tools():
+
+    sudo('mkdir -p /root/.starbase/')
+
+    if exists("/root/.starbase/version") and sudo("cat /root/.starbase/version") == RELEASE_VERSION and args:
+        return
+
+    sudo('echo "" >> /etc/hosts')
+    sudo('echo "127.0.1.1 `hostname`" >> /etc/hosts')
+
+    with cd('/root'):
+
+        # base build tools
+        sudo('apt-get -y update')
+        sudo('apt-get -y upgrade')
+        sudo('apt-get -y install software-properties-common')
+        
+        sudo('apt-add-repository -y ppa:rwky/redis')
+        sudo('apt-add-repository -y ppa:chris-lea/node.js')
+        sudo('apt-get -y update')
+        # Base Packages
+        sudo("apt-get -y install" + " ".join([
+            ' curl fail2ban unzip whois zsh moreutils host',
+            ' build-essential gcc git libmcrypt4 libpcre3-dev g++ make', # make tools
+            ' make python-pip supervisor ufw unattended-upgrades ',
+        ]))
+
+        setup_locale()
+
+        # HTTPie
+        sudo('pip install httpie')
+        sudo('pip install python-dotenv')
+
+    sudo('echo "%s" > /root/.starbase/version' % RELEASE_VERSION)
+
+
+
 def setup_mongodb():
     sudo('apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10')
     sudo('echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list')
@@ -108,6 +156,9 @@ def setup_nodejs():
 
 
 def setup_nginx():
+
+    sudo('mkdir -p /etc/nginx/')
+
     sudo('apt-add-repository -y ppa:nginx/development') # on est des oufs
     sudo('apt-get -y update')
     sudo('apt-get -y install nginx')
@@ -139,12 +190,11 @@ def setup_ssl_certs():
 
 
 def setup_vhost():
+    setup_struct()
     template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
-    sudo('mkdir -p /var/log/%(domain)s' % env)
-    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs}' % env)
     if not exists('/opt/%(domain)s/bundle/main.js' % env):
         template('defaultapp.js', '/opt/%(domain)s/bundle/main.js' % env)
     sudo('service %(domain)s restart' % env)
@@ -173,34 +223,9 @@ def setup_locale():
 """
 Setup server for receiving meteor apps
 """
-def setup():
+def setup_meteor():
 
-    sudo('cd /root') # go to /root
-
-    config_get_email()
-    config_get_domain()
-
-    # base build tools
-    if not which('curl'):
-        sudo('apt-get -y update')
-        sudo('apt-get -y upgrade')
-        sudo('apt-get -y install software-properties-common')
-        
-        sudo('apt-add-repository -y ppa:rwky/redis')
-        sudo('apt-add-repository -y ppa:chris-lea/node.js')
-        sudo('apt-get -y update')
-        # Base Packages
-        sudo('apt-get -y install build-essential curl fail2ban gcc git libmcrypt4 libpcre3-dev g++ make' 
-            + ' make python-pip supervisor ufw unattended-upgrades unzip whois zsh moreutils')
-        setup_locale()
-
-
-
-
-    # HTTPie
-    if not which('http'):
-        sudo('pip install httpie')
-
+    setup_tools()
 
     # Nodejs
     if not which('npm'):
@@ -228,12 +253,13 @@ def setup():
 
 
 """
- ___ __  __ ____   ___  ____ _____      __  _______  ______   ___  ____ _____ 
-|_ _|  \/  |  _ \ / _ \|  _ \_   _|    / / | ____\ \/ /  _ \ / _ \|  _ \_   _|
- | || |\/| | |_) | | | | |_) || |     / /  |  _|  \  /| |_) | | | | |_) || |  
- | || |  | |  __/| |_| |  _ < | |    / /   | |___ /  \|  __/| |_| |  _ < | |  
-|___|_|  |_|_|    \___/|_| \_\|_|   /_/    |_____/_/\_\_|    \___/|_| \_\|_|  
-                                                                              
+ _____ __  __ _____   ____  _____ _______       __  ________   _______   ____  _____ _______ 
+|_   _|  \/  |  __ \ / __ \|  __ \__   __|     / / |  ____\ \ / /  __ \ / __ \|  __ \__   __|
+  | | | \  / | |__) | |  | | |__) | | |       / /  | |__   \ V /| |__) | |  | | |__) | | |   
+  | | | |\/| |  ___/| |  | |  _  /  | |      / /   |  __|   > < |  ___/| |  | |  _  /  | |   
+ _| |_| |  | | |    | |__| | | \ \  | |     / /    | |____ / . \| |    | |__| | | \ \  | |   
+|_____|_|  |_|_|     \____/|_|  \_\ |_|    /_/     |______/_/ \_\_|     \____/|_|  \_\ |_|   
+
 """
 
 
@@ -274,35 +300,39 @@ def develop():
 """
 
 
-def environment_var(args):
+def environment_var():
     if not args.value:
-        return environment_get_var(args)
+        return environment_get_var(env.args)
     else:
-        return environment_set_var(args)
+        return environment_set_var(env.args)
 
 
-def environment_get_var(args):
-    print sudo("echo $%s" % args.key)
+def environment_get_var():
+    setup_tools()
+    setup_struct()
+    print sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'get', env.args.key))
 
-def environment_set_var(args):
-    print sudo("%s=%s; export %s" % (args.key, args.value, args.key))
+
+def environment_set_var():
+    setup_tools()
+    setup_struct()
+    sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'set', env.args.key, unicode(env.args.value, errors="ignore")))
 
 
 
 """
- ____  _____ ____  _     _____   __
-|  _ \| ____|  _ \| |   / _ \ \ / /
-| | | |  _| | |_) | |  | | | \ V / 
-| |_| | |___|  __/| |__| |_| || |  
-|____/|_____|_|   |_____\___/ |_|  
-                                   
+ _____  ______ _____  _      ______     __
+|  __ \|  ____|  __ \| |    / __ \ \   / /
+| |  | | |__  | |__) | |   | |  | \ \_/ / 
+| |  | |  __| |  ___/| |   | |  | |\   /  
+| |__| | |____| |    | |___| |__| | | |   
+|_____/|______|_|    |______\____/  |_|   
+                                          
 """
 
 def deploy():
-
-    config_get_email()
-    config_get_domain()
-    setup_vhost()
+    
+    setup_meteor()
 
     print("Start build on " + env.app_local_root)
     local('cd ' + env.app_local_root)
@@ -322,9 +352,11 @@ def deploy():
     sudo("service nginx reload" % env)
 
 
+
 def rollback():
 
     pass
+
 
 
 
@@ -386,7 +418,7 @@ if __name__ == "__main__":
 
     COMMANDS = {
         "develop": develop,
-        "setup": setup,
+        "setup": setup_meteor,
         "deploy": deploy,
         "rollback": rollback,
         "env": environment_var,
@@ -395,32 +427,30 @@ if __name__ == "__main__":
     }
 
     if not os.path.exists(args.appdir + '/.meteor'):
-        abort('''
+        abort(red('''
         Invalid meteor project, you must specify a valid meteor project path (look for .meteor) using -a --app or run commands in meteor application
-        ''')
+        '''))
 
     if not os.path.exists(args.appdir + '/settings.json'):
-        abort('''
+        abort(red('''
         Invalid meteor settings file, you must create a valid settings.json file in your meteor project
-        ''')
+        '''))
 
     settings = json.load(open(args.appdir + '/settings.json', 'r'))
 
     targets = settings.get('servers').keys();
 
-    #
     if args.target == None:
         args.target = targets[0]
 
     if not args.target in targets:
-        abort('Invalid target name, should be in %s' % targets)
+        abort(red('Invalid target name, should be in %s' % targets))
     else:
         target = settings['servers'][args.target]
 
 
     config_get_domain()
     config_get_email()
-
 
     env.host_string = target['host']
     env.user = target['username']
@@ -440,5 +470,5 @@ if __name__ == "__main__":
     for k, v in target.get('env', {}).items():
         env[k] = v
 
-
-    COMMANDS[args.command](args)
+    env.args = args
+    COMMANDS[args.command]()

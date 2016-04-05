@@ -22,6 +22,7 @@ setup(
         'fabric',
         'commentjson',
         'jinja2',
+        'python-dotenv',
     ],
     entry_points={
         'console_scripts': ['starbase = starbase:main']

@@ -4,7 +4,7 @@ var http = require('http'),
 
 
 //We need a function which handles requests and send response
-function handleRequest(request, response){
+function handleRequest(request, response) {
     response.end('It Works !');
 }
 
