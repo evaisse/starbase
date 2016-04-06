@@ -99,7 +99,7 @@ def setup_struct():
     if exists("/opt/%(domain)s" % env):
         return False
     sudo('mkdir -p /var/log/%(domain)s' % env)
-    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs,backup,releases}' % env)
+    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs,backup,releases,etc,ssl}' % env)
     sudo('touch /opt/%(domain)s/.env' % env)
 
 
@@ -168,8 +168,13 @@ def setup_nginx():
     template('nginx.global.conf', '/etc/nginx/nginx.conf')
     template('index.html', '/var/www/html/index.html')
     
+    # cleanup potential default file from ubuntu
+    if exists('/etc/nginx/sites-available/default'):
+        sudo('rm /etc/nginx/sites-available/default') # potential default file from ubuntu
+        sudo('rm /etc/nginx/sites-enabled/default') 
+
     # # default site if none found
-    if not exists('nginx.default.conf'):
+    if not exists('/etc/nginx/sites-available/default.conf'):
         template('nginx.default.conf', '/etc/nginx/sites-available/default.conf')
         sudo('ln -fs /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/')
 
@@ -181,17 +186,33 @@ def setup_nginx():
 
 
 def setup_ssl_certs():
-    if not exists('/opt/letsencrypt'):
+
+    print(green('setup SSL cert generation'))
+
+    if not exists('/usr/local/lib/letsencrypt'):
+        print(green('fetch lets encrypt client'))
         sudo('git clone https://github.com/letsencrypt/letsencrypt /usr/local/lib/letsencrypt')
-        sudo('mkdir -p /var/www/letsencrypt/%(domain)s' % env)
+        sudo('service nginx reload')
+
+
+    print(green('create SSL certs'))
+
+    env.ssl_dir = "/etc/letsencrypt/live/%(domain)s" % env
+
+    # setup web root for let's encrypt
+    sudo('mkdir -p /var/www/letsencrypt/' % env) 
+
     sudo('/usr/local/lib/letsencrypt/letsencrypt-auto certonly --webroot -w /var/www/letsencrypt/ --agree-tos --domain %(domain)s --email %(email)s' % env)
     template('cron/certs-renewal', '/etc/cron.d/certs-renewal.%(domain)s' % env)
-    template('nginx.letsencrypt.conf', '/etc/nginx/conf.d/letsencrypt.conf')
+    env.enable_ssl = exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env)
+    template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     sudo('service nginx reload')
 
 
 def setup_vhost():
+    print(green('setup/reload vhosts'))
     setup_struct()
+    env.enable_ssl = exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env)
     template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
@@ -199,6 +220,7 @@ def setup_vhost():
     if not exists('/opt/%(domain)s/bundle/main.js' % env):
         template('defaultapp.js', '/opt/%(domain)s/bundle/main.js' % env)
     sudo('service %(domain)s restart' % env)
+
 
 
 def setup_elasticsearch():
@@ -240,11 +262,11 @@ def setup_meteor():
     if not exists('/etc/nginx'):
         setup_nginx()
 
+    setup_vhost()
+
     # SSL certs builder
     if not exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env):
         setup_ssl_certs()
-
-    setup_vhost()
 
 
 
@@ -337,14 +359,18 @@ def deploy():
     local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
-    put(env.app_local_root + '/' + filename, '/opt/%(domain)s/releases/%(deployment_id)s' % env)
-    with cd("/opt/%s/releases/" % (env.domain)):
+    release_path = '/opt/%(domain)s/releases/%(deployment_id)s/' % env
+    sudo('mkdir -p %s' % release_path)
+    put(env.app_local_root + '/' + filename, release_path + "/" + filename)
+    
+    with cd(release_path):
         sudo("tar -zxf %s" % (filename))
-    with cd("/opt/%(domain)s/bundle/programs/server" % env):
+
+    # rebuild arch-dependent packages
+    with cd(release_path + "/bundle/programs/server"):
         sudo("npm install")
         sudo("rm -rf npm/npm-bcrypt/node_modules/bcrypt/")
         sudo("npm install bcrypt")
-
     
     sudo("service %(domain)s restart" % env)
     sudo("service nginx reload" % env)
@@ -357,7 +383,10 @@ def rollback():
 
 
 
-
+"""
+@see http://docs.fabfile.org/en/latest/api/core/context_managers.html#fabric.context_managers.settings
+Use context manager to set fabric to use hard error reporting
+"""
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Deploy or some integers.')
