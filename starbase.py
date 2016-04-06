@@ -94,7 +94,6 @@ def which(program):
                                
 """
 
-
 def setup_struct():
     if exists("/opt/%(domain)s" % env):
         return False
@@ -127,7 +126,7 @@ def setup_tools():
         sudo("apt-get -y install" + " ".join([
             ' curl fail2ban unzip whois zsh moreutils host',
             ' build-essential gcc git libmcrypt4 libpcre3-dev g++ make', # make tools
-            ' make python-pip supervisor ufw unattended-upgrades ',
+            ' make python-pip supervisor ufw unattended-upgrades default-mta',
         ]))
 
         setup_locale()
@@ -372,6 +371,8 @@ def deploy():
         sudo("rm -rf npm/npm-bcrypt/node_modules/bcrypt/")
         sudo("npm install bcrypt")
     
+    sudo("ln -s %s %s" % release_path)
+
     sudo("service %(domain)s restart" % env)
     sudo("service nginx reload" % env)
 
@@ -437,8 +438,8 @@ if __name__ == "__main__":
     add_base_args(parser_restore)
 
     parser_restore = subparsers.add_parser('env', help='Store & retrieve remote env vars')
-    parser_restore.add_argument('key', type=str, help='environment key')
-    parser_restore.add_argument('value', type=str, help='environment key value', default=None, nargs='?')
+    parser_restore.add_argument('key', type=str, help='Environment key')
+    parser_restore.add_argument('value', type=str, help='Environment key value', default=None, nargs='?')
     add_base_args(parser_restore)
 
     args = parser.parse_args()
