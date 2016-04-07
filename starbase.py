@@ -217,7 +217,8 @@ def setup_vhost():
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
     if not exists('/opt/%(domain)s/bundle/main.js' % env):
-        template('defaultapp.js', '/opt/%(domain)s/bundle/main.js' % env)
+        template('defaultapp.js', '/opt/%(domain)s/releases/default/bundle/main.js' % env)
+        sudo('ln -s /opt/%(domain)s/releases/default /opt/%(domain)s/bundle' % env)
     sudo('service %(domain)s restart' % env)
 
 
@@ -362,17 +363,22 @@ def deploy():
     sudo('mkdir -p %s' % release_path)
     put(env.app_local_root + '/' + filename, release_path + "/" + filename)
     
+    env.release_path = release_path
+
     with cd(release_path):
         sudo("tar -zxf %s" % (filename))
+        sudo("rm %s" % (filename))
 
     # rebuild arch-dependent packages
     with cd(release_path + "/bundle/programs/server"):
         sudo("npm install")
         sudo("rm -rf npm/npm-bcrypt/node_modules/bcrypt/")
         sudo("npm install bcrypt")
-    
-    sudo("ln -s %s %s" % release_path)
 
+    # deploy this release
+    sudo("ln -s /opt/%(domain)s/bundle %(release_path)s/bundle" % env)
+
+    # reload services
     sudo("service %(domain)s restart" % env)
     sudo("service nginx reload" % env)
 
@@ -480,7 +486,7 @@ if __name__ == "__main__":
     config_get_domain()
     config_get_email()
 
-    env.deployment_id = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    env.deployment_id = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     env.host_string = target['host']
     env.user = target['username']
 
