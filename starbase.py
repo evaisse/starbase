@@ -218,7 +218,7 @@ def setup_vhost():
     sudo('service nginx reload')
     if not exists('/opt/%(domain)s/bundle/main.js' % env):
         template('defaultapp.js', '/opt/%(domain)s/releases/default/bundle/main.js' % env)
-        sudo('ln -s /opt/%(domain)s/releases/default /opt/%(domain)s/bundle' % env)
+        sudo('ln -fs /opt/%(domain)s/releases/default/bundle /opt/%(domain)s/bundle' % env)
     sudo('service %(domain)s restart' % env)
 
 
@@ -359,7 +359,7 @@ def deploy():
     local('meteor build .')
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
-    release_path = '/opt/%(domain)s/releases/%(deployment_id)s/' % env
+    release_path = '/opt/%(domain)s/releases/%(deployment_id)s' % env
     sudo('mkdir -p %s' % release_path)
     put(env.app_local_root + '/' + filename, release_path + "/" + filename)
     
@@ -376,7 +376,7 @@ def deploy():
         sudo("npm install bcrypt")
 
     # deploy this release
-    sudo("ln -s /opt/%(domain)s/bundle %(release_path)s/bundle" % env)
+    sudo("ln -fs /opt/%(domain)s/bundle %(release_path)s/bundle" % env)
 
     # reload services
     sudo("service %(domain)s restart" % env)
