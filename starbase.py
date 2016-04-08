@@ -12,7 +12,7 @@ from fabric.api import local, run, sudo, settings, abort, env
 from fabric.contrib.console import confirm
 from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed
-from fabric.colors import green, red
+from fabric.colors import green, red, blue
 from fabric.context_managers import cd, shell_env
 
 import random
@@ -21,9 +21,8 @@ import dotenv
 
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-RELEASE_VERSION = "0.1.0"
-
-
+RELEASE_VERSION = "0.1.5"
+env.NODE_VERSION = "0.10.44"
 
 
 """
@@ -98,7 +97,7 @@ def setup_struct():
     if exists("/opt/%(domain)s" % env):
         return False
     sudo('mkdir -p /var/log/%(domain)s' % env)
-    sudo('mkdir -p /opt/%(domain)s/{bundle,conf,data,logs,backup,releases,etc,ssl}' % env)
+    sudo('mkdir -p /opt/%(domain)s/{backups,conf,data,logs,releases,var,etc}' % env)
     sudo('touch /opt/%(domain)s/.env' % env)
 
 
@@ -112,22 +111,27 @@ def setup_tools():
     sudo('echo "" >> /etc/hosts')
     sudo('echo "127.0.1.1 `hostname`" >> /etc/hosts')
 
+
     with cd('/root'):
 
         # base build tools
         sudo('apt-get -y update')
         sudo('apt-get -y upgrade')
         sudo('apt-get -y install software-properties-common')
-        
         sudo('apt-add-repository -y ppa:rwky/redis')
-        sudo('apt-add-repository -y ppa:chris-lea/node.js')
         sudo('apt-get -y update')
+        
         # Base Packages
         sudo("apt-get -y install" + " ".join([
             ' curl fail2ban unzip whois zsh moreutils host',
             ' build-essential gcc git libmcrypt4 libpcre3-dev g++ make', # make tools
-            ' make python-pip supervisor ufw unattended-upgrades default-mta',
+            ' make python-pip supervisor ufw unattended-upgrades',
         ]))
+
+        hostname = sudo('hostname')
+        sudo('debconf-set-selections <<< "postfix postfix/mailname string %s"' % hostname)
+        sudo('debconf-set-selections <<< "postfix postfix/main_mailer_type string \'Internet Site\'"')
+        sudo('apt-get -y postfix')
 
         setup_locale()
 
@@ -149,10 +153,10 @@ def setup_mongodb():
     template('cron/mongodb', '/etc/cron.d/mongodb-backup')
 
 def setup_nodejs():
-    sudo('add-apt-repository -y ppa:chris-lea/node.js')
-    sudo('apt-get -y update')
-    sudo('apt-get -y install nodejs')
-    sudo('npm -g install npm@latest')
+    template('install_nodejs.sh', '/root/.starbase/')
+    sudo('chmod u+x /root/.starbase/*.sh')
+    sudo('/root/.starbase/install_nodejs.sh')
+
 
 
 def setup_nginx():
@@ -214,9 +218,11 @@ def setup_vhost():
     env.enable_ssl = exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env)
     template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
+    template('logrotate.conf', '/etc/logrotate.d/%(domain)s.conf' % env)
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
-    if not exists('/opt/%(domain)s/bundle/main.js' % env):
+    if not exists('/opt/%(domain)s/releases/default' % env):
+        sudo('mkdir -p /opt/%(domain)s/releases/default/bundle' % env)
         template('defaultapp.js', '/opt/%(domain)s/releases/default/bundle/main.js' % env)
         sudo('ln -fs /opt/%(domain)s/releases/default/bundle /opt/%(domain)s/bundle' % env)
     sudo('service %(domain)s restart' % env)
@@ -352,11 +358,14 @@ def environment_set_var():
 
 def deploy():
     
+    print(green('Start Deployment RIGHT KNOW !!!'))
+
     setup_meteor()
 
-    print("Start build on " + env.app_local_root)
+    print(green("Start build on " + env.app_local_root))
     local('cd ' + env.app_local_root)
     local('meteor build .')
+
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
     release_path = '/opt/%(domain)s/releases/%(deployment_id)s' % env
@@ -365,18 +374,24 @@ def deploy():
     
     env.release_path = release_path
 
+    template('build_app.sh', '%(release_path)s/build.sh' % env)
+    sudo('chmod +x %(release_path)s/build.sh' % env)
+    
+
     with cd(release_path):
         sudo("tar -zxf %s" % (filename))
         sudo("rm %s" % (filename))
 
-    # rebuild arch-dependent packages
-    with cd(release_path + "/bundle/programs/server"):
-        sudo("npm install")
-        sudo("rm -rf npm/npm-bcrypt/node_modules/bcrypt/")
-        sudo("npm install bcrypt")
+    # build process
+    sudo('%(release_path)s/build.sh' % env)
+
+    # # rebuild arch-dependent packages
+    # with cd(release_path + "/bundle/programs/server"):
+    #     # sudo('/opt/%(domain)s/rebuild.sh')
+    #     pass
 
     # deploy this release
-    sudo("ln -fs /opt/%(domain)s/bundle %(release_path)s/bundle" % env)
+    sudo("ln -fs %(release_path)s/bundle /opt/%(domain)s" % env)
 
     # reload services
     sudo("service %(domain)s restart" % env)
