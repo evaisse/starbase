@@ -5,7 +5,7 @@ A platform management tools for meteorjs
 
 
 Features
----
+----
 
 - Setup MongoDB with full text search
 - Setup NGINX as proxy with free let's encrypt SSL
@@ -77,9 +77,9 @@ Prefer use of `starbase prod env FOO "bar"` for settings target only environment
 
 
 Notes
----
+----
 
- - https://help.ubuntu.com/community/EnvironmentVariables
- - OPLOG: A TAIL OF WONDER AND WOE  - http://adammonsen.com/post/1314
- - http://joshowens.me/building-your-own-meteor-galaxy-hosting-setup/
- - https://www.digitalocean.com/community/tutorials/how-to-choose-an-effective-backup-strategy-for-your-vps
+- https://help.ubuntu.com/community/EnvironmentVariables
+- OPLOG: A TAIL OF WONDER AND WOE  - http://adammonsen.com/post/1314
+- http://joshowens.me/building-your-own-meteor-galaxy-hosting-setup/
+- https://www.digitalocean.com/community/tutorials/how-to-choose-an-effective-backup-strategy-for-your-vps
