@@ -397,7 +397,7 @@ def deploy():
 
     print(green("Start build on " + env.app_local_root))
     local('cd ' + env.app_local_root)
-    local('meteor build .')
+    local('meteor build . --architecture os.linux.x86_64')
 
     print(green("build complete, lets teleport this !"))
     filename = os.path.basename(env.app_local_root) + '.tar.gz'
@@ -416,10 +416,10 @@ def deploy():
 
     # build process
     put(env.app_local_root + '/settings.json', "%(release_path)s/bundle/" % env)
-    sudo('%(release_path)s/build.sh' % env)
+    # sudo('%(release_path)s/build.sh' % env)
 
     # deploy this release
-    sudo("ln -fs %(release_path)s /opt/%(domain)s/releases/latest" % env)
+    sudo("rm /opt/%(domain)s/releases/latest && ln -fs %(release_path)s /opt/%(domain)s/releases/latest" % env)
 
     # reload services
     sudo("service %(domain)s restart" % env)

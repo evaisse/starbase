@@ -47,7 +47,7 @@ Prefer use of `starbase prod env FOO "bar"` for settings target only environment
                 // or pem file (ssh based authentication)
                 "pem": "~/.ssh/id_nce_meteor",
                 "env": {
-                    "ROOT_URL": "https://meselus.com",
+                    "ROOT_URL": "https://bla.com",
                     "METEOR_ENV": "prod",
                 }
             },
@@ -57,7 +57,7 @@ Prefer use of `starbase prod env FOO "bar"` for settings target only environment
                 "env": {
                     "ROOT_URL": "http://localhost:3000",
                     "METEOR_ENV": "dev",
-                    "MONGO_URL": "mongodb://localhost/nceMeteor"
+                    "MONGO_URL": "mongodb://localhost/myProjectDbName"
                 }
             }
         },

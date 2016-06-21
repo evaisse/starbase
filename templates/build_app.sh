@@ -81,4 +81,6 @@ if [ -d ./node_modules ]; then
 fi
 
 # support for 0.9
+$BUNDLE_DIR/programs/server
+rm -rf node_modules
 sudo npm install --production
