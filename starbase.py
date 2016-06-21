@@ -416,7 +416,7 @@ def deploy():
 
     # build process
     put(env.app_local_root + '/settings.json', "%(release_path)s/bundle/" % env)
-    # sudo('%(release_path)s/build.sh' % env)
+    sudo('%(release_path)s/build.sh' % env)
 
     # deploy this release
     sudo("rm /opt/%(domain)s/releases/latest && ln -fs %(release_path)s /opt/%(domain)s/releases/latest" % env)
