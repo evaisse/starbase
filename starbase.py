@@ -26,9 +26,9 @@ env.NODE_VERSION = "0.10.44"
 
 
 """
-  ____ ___  _   _ _____ ___ ____ 
+  ____ ___  _   _ _____ ___ ____
  / ___/ _ \| \ | |  ___|_ _/ ___|
-| |  | | | |  \| | |_   | | |  _ 
+| |  | | | |  \| | |_   | | |  _
 | |__| |_| | |\  |  _|  | | |_| |
  \____\___/|_| \_|_|   |___\____|
 
@@ -50,7 +50,7 @@ def config_get_domain():
 def config_get_email():
     if env.get('email'):
         return False
-    # EMAIL for sslcerts 
+    # EMAIL for sslcerts
     if args.email:
         env.email = args.email
     elif target.get('email'):
@@ -62,11 +62,11 @@ def config_get_email():
 
 
 """
- _   _ _____ ___ _     ____  
-| | | |_   _|_ _| |   / ___| 
-| | | | | |  | || |   \___ \ 
+ _   _ _____ ___ _     ____
+| | | |_   _|_ _| |   / ___|
+| | | | | |  | || |   \___ \
 | |_| | | |  | || |___ ___) |
- \___/  |_| |___|_____|____/ 
+ \___/  |_| |___|_____|____/
 
 """
 
@@ -85,12 +85,12 @@ def which(program):
 
 
 """
- ____  _____ _____ _   _ ____  
-/ ___|| ____|_   _| | | |  _ \ 
+ ____  _____ _____ _   _ ____
+/ ___|| ____|_   _| | | |  _ \
 \___ \|  _|   | | | | | | |_) |
- ___) | |___  | | | |_| |  __/ 
-|____/|_____| |_|  \___/|_|    
-                               
+ ___) | |___  | | | |_| |  __/
+|____/|_____| |_|  \___/|_|
+
 """
 
 def setup_struct():
@@ -120,7 +120,7 @@ def setup_tools():
         sudo('apt-get -y install software-properties-common')
         sudo('apt-add-repository -y ppa:rwky/redis')
         sudo('apt-get -y update')
-        
+
         # Base Packages
         sudo("apt-get -y install" + " ".join([
             ' curl fail2ban unzip whois zsh moreutils host',
@@ -145,12 +145,45 @@ def setup_tools():
 
 def setup_mongodb():
     sudo('apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10')
-    sudo('echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.0.list')
+    sudo('echo "deb http://repo.mongodb.org/apt/ubuntu trusty/mongodb-org/3.2 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-3.2.list')
     sudo('apt-get -y update')
     sudo('apt-get -y install mongodb-org')
     sudo('service mongod start')
 
     template('cron/mongodb', '/etc/cron.d/mongodb-backup')
+
+    """
+    # Todo setup mongo remote access
+    # Make MongoDB connectable from outside world without SSH tunnel
+    if [ $1 == "true" ]; then
+        # enable remote access
+        # setting the mongodb bind_ip to allow connections from everywhere
+        sed -i "s/bind_ip = .*/bind_ip = 0.0.0.0/" /etc/mongod.conf
+    fi
+
+    password=$(</dev/urandom tr -dc '12345!@#$%qwertQWERTasdfgASDFGzxcvbZXCVB' | head -c15; echo "")
+
+    cat > /root/mongodb-admin-user.js << EOF
+    db.getSiblingDB("admin").createUser(
+      {
+        user: "myUserAdmin",
+        pwd: "$password",
+        roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+      }
+    )
+    EOF
+
+    mongo /root/mongodb-admin-user.js
+
+    sed -i "s/127.0.0.1/0.0.0.0/g" /etc/mongod.conf
+
+    cat >> /etc/mongod.conf <<EOF
+    security:
+        authorization: enabled
+    EOF
+
+    service mongod restart
+    """
 
 def setup_nodejs():
     template('install_nodejs.sh', '/root/.starbase/')
@@ -170,11 +203,11 @@ def setup_nginx():
     # send default nginx config
     template('nginx.global.conf', '/etc/nginx/nginx.conf')
     template('index.html', '/var/www/html/index.html')
-    
+
     # cleanup potential default file from ubuntu
     if exists('/etc/nginx/sites-available/default'):
         sudo('rm /etc/nginx/sites-available/default') # potential default file from ubuntu
-        sudo('rm /etc/nginx/sites-enabled/default') 
+        sudo('rm /etc/nginx/sites-enabled/default')
 
     # # default site if none found
     if not exists('/etc/nginx/sites-available/default.conf'):
@@ -182,7 +215,7 @@ def setup_nginx():
         sudo('ln -fs /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/')
 
     sudo('service nginx start')
-    
+
     # build better cypher for SSL A+ grade ssl labs
     if not exists('/etc/nginx/dhparams.2048.pem'):
         sudo('openssl dhparam -out /etc/nginx/dhparams.2048.pem 2048')
@@ -203,7 +236,7 @@ def setup_ssl_certs():
     env.ssl_dir = "/etc/letsencrypt/live/%(domain)s" % env
 
     # setup web root for let's encrypt
-    sudo('mkdir -p /var/www/letsencrypt/' % env) 
+    sudo('mkdir -p /var/www/letsencrypt/' % env)
 
     sudo('/usr/local/lib/letsencrypt/letsencrypt-auto certonly --webroot -w /var/www/letsencrypt/ --agree-tos --domain %(domain)s --email %(email)s' % env)
     template('cron/certs-renewal', '/etc/cron.d/certs-renewal.%(domain)s' % env)
@@ -279,12 +312,12 @@ def setup_meteor():
 
 
 """
- _____ __  __ _____   ____  _____ _______       __  ________   _______   ____  _____ _______ 
+ _____ __  __ _____   ____  _____ _______       __  ________   _______   ____  _____ _______
 |_   _|  \/  |  __ \ / __ \|  __ \__   __|     / / |  ____\ \ / /  __ \ / __ \|  __ \__   __|
-  | | | \  / | |__) | |  | | |__) | | |       / /  | |__   \ V /| |__) | |  | | |__) | | |   
-  | | | |\/| |  ___/| |  | |  _  /  | |      / /   |  __|   > < |  ___/| |  | |  _  /  | |   
- _| |_| |  | | |    | |__| | | \ \  | |     / /    | |____ / . \| |    | |__| | | \ \  | |   
-|_____|_|  |_|_|     \____/|_|  \_\ |_|    /_/     |______/_/ \_\_|     \____/|_|  \_\ |_|   
+  | | | \  / | |__) | |  | | |__) | | |       / /  | |__   \ V /| |__) | |  | | |__) | | |
+  | | | |\/| |  ___/| |  | |  _  /  | |      / /   |  __|   > < |  ___/| |  | |  _  /  | |
+ _| |_| |  | | |    | |__| | | \ \  | |     / /    | |____ / . \| |    | |__| | | \ \  | |
+|_____|_|  |_|_|     \____/|_|  \_\ |_|    /_/     |______/_/ \_\_|     \____/|_|  \_\ |_|
 
 """
 
@@ -316,13 +349,13 @@ def develop():
         local('meteor')
 
 """
-  _____ ____  _   _ ______ _____ _____ 
+  _____ ____  _   _ ______ _____ _____
  / ____/ __ \| \ | |  ____|_   _/ ____|
-| |   | |  | |  \| | |__    | || |  __ 
+| |   | |  | |  \| | |__    | || |  __
 | |   | |  | | . ` |  __|   | || | |_ |
 | |___| |__| | |\  | |     _| || |__| |
  \_____\____/|_| \_|_|    |_____\_____|
-                                       
+
 """
 
 
@@ -349,15 +382,15 @@ def environment_set_var():
 """
  _____  ______ _____  _      ______     __
 |  __ \|  ____|  __ \| |    / __ \ \   / /
-| |  | | |__  | |__) | |   | |  | \ \_/ / 
-| |  | |  __| |  ___/| |   | |  | |\   /  
-| |__| | |____| |    | |___| |__| | | |   
-|_____/|______|_|    |______\____/  |_|   
-                                          
+| |  | | |__  | |__) | |   | |  | \ \_/ /
+| |  | |  __| |  ___/| |   | |  | |\   /
+| |__| | |____| |    | |___| |__| | | |
+|_____/|______|_|    |______\____/  |_|
+
 """
 
 def deploy():
-    
+
     print(green('Start Deployment RIGHT KNOW !!!'))
 
     setup_meteor()
@@ -371,12 +404,12 @@ def deploy():
     release_path = '/opt/%(domain)s/releases/%(deployment_id)s' % env
     sudo('mkdir -p %s' % release_path)
     put(env.app_local_root + '/' + filename, release_path + "/" + filename)
-    
+
     env.release_path = release_path
 
     template('build_app.sh', '%(release_path)s/build.sh' % env)
     sudo('chmod +x %(release_path)s/build.sh' % env)
-    
+
 
     with cd(release_path):
         sudo("tar -zxf %s" % (filename))
@@ -412,35 +445,35 @@ Use context manager to set fabric to use hard error reporting
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Deploy or some integers.')
-    parser.add_argument('-e', '--env', 
-                        type=str, 
+    parser.add_argument('-e', '--env',
+                        type=str,
                         help='Target environment to execute command, (by default first env)',
                         dest="target",
                         default=None)
 
 
     def add_base_args(parser):
-        parser.add_argument('-a', '--app', 
-                            dest='appdir', 
+        parser.add_argument('-a', '--app',
+                            dest='appdir',
                             default=os.getcwd(),
                             help='Meteor app directory, default cwd (%s)' % os.getcwd())
-        parser.add_argument('-H', '--host', 
-                            dest='hostname', 
+        parser.add_argument('-H', '--host',
+                            dest='hostname',
                             help='Host to connect to')
-        parser.add_argument('-i', '--identity', 
-                            dest='sshkey', 
+        parser.add_argument('-i', '--identity',
+                            dest='sshkey',
                             default=False,
                             help='SSH key path')
-        parser.add_argument('-p', '--port', 
+        parser.add_argument('-p', '--port',
                             dest='sshport',
                             default=False,
                             help='SSH port')
-        parser.add_argument('--domain', 
-                            dest='domain', 
+        parser.add_argument('--domain',
+                            dest='domain',
                             default=False,
                             help='Vhost domain')
-        parser.add_argument('--email', 
-                            dest='email', 
+        parser.add_argument('--email',
+                            dest='email',
                             default=False,
                             help='SSL certs email & administrative contact')
 
