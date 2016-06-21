@@ -261,7 +261,6 @@ def setup_vhost():
     sudo('service %(domain)s restart' % env)
 
 
-
 def setup_elasticsearch():
     if exists('/opt/%(domain)s/config/elasticsearch.yml' % env):
         return
@@ -360,21 +359,22 @@ def develop():
 
 
 def environment_var():
+    setup_tools()
+    setup_struct()
+    if not args.key:
+        return environment_get_all_vars()
     if not args.value:
         return environment_get_var(env.args)
     else:
         return environment_set_var(env.args)
 
+def environment_get_all_vars():
+    print sudo('cat /opt/%s/.env' % env.domain)
 
-def environment_get_var():
-    setup_tools()
-    setup_struct()
+def environment_get_var(*args):
     print sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'get', env.args.key))
 
-
-def environment_set_var():
-    setup_tools()
-    setup_struct()
+def environment_set_var(*args):
     sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'set', env.args.key, unicode(env.args.value, errors="ignore")))
 
 
@@ -410,30 +410,23 @@ def deploy():
     template('build_app.sh', '%(release_path)s/build.sh' % env)
     sudo('chmod +x %(release_path)s/build.sh' % env)
 
-
     with cd(release_path):
         sudo("tar -zxf %s" % (filename))
         sudo("rm %s" % (filename))
 
     # build process
+    put(env.app_local_root + '/settings.json', "%(release_path)s/bundle/" % env)
     sudo('%(release_path)s/build.sh' % env)
 
-    # # rebuild arch-dependent packages
-    # with cd(release_path + "/bundle/programs/server"):
-    #     # sudo('/opt/%(domain)s/rebuild.sh')
-    #     pass
-
     # deploy this release
-    sudo("ln -fs %(release_path)s/bundle /opt/%(domain)s" % env)
+    sudo("ln -fs %(release_path)s /opt/%(domain)s/releases/latest" % env)
 
     # reload services
     sudo("service %(domain)s restart" % env)
     sudo("service nginx reload" % env)
 
 
-
 def rollback():
-
     pass
 
 
@@ -492,7 +485,7 @@ if __name__ == "__main__":
     add_base_args(parser_restore)
 
     parser_restore = subparsers.add_parser('env', help='Store & retrieve remote env vars')
-    parser_restore.add_argument('key', type=str, help='Environment key')
+    parser_restore.add_argument('key', type=str, help='Environment key', default=None, nargs='?')
     parser_restore.add_argument('value', type=str, help='Environment key value', default=None, nargs='?')
     add_base_args(parser_restore)
 

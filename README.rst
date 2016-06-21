@@ -7,20 +7,20 @@ A platform management tools for meteorjs
 Features
 ---
 
- - Setup MongoDB with full text search
- - Setup NGINX as proxy with free let's encrypt SSL
- - Setup Node + phantomjs (for spiderable module)
+- Setup MongoDB with full text search
+- Setup NGINX as proxy with free let's encrypt SSL
+- Setup Node + phantomjs (for spiderable module)
 
- - Deploy application
- - Rollback
- - Tail remote logs
+- Deploy application
+- Rollback
+- Tail remote logs
 
- - Backup / Restore Mongodb instance
+- Backup / Restore Mongodb instance
 
- - Easy ENV configuration for private values (AWS keys, secrets, ...)
- - Run local meteor app with settings.json
+- Easy ENV configuration for private values (AWS keys, secrets, ...)
+- Run local meteor app with settings.json
 
- - easy to extends via your own fabfiles command
+- easy to extends via your own fabfiles command
 
 
 
@@ -30,6 +30,7 @@ settings.json sample
 You can setup your targets in settings.json. Watch out to not put some sensitive information here.
 Prefer use of `starbase prod env FOO "bar"` for settings target only environment vars.
 
+.. code::
 
     {
         "servers": {

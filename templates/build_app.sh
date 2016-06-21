@@ -80,11 +80,5 @@ if [ -d ./node_modules ]; then
   cd ../
 fi
 
-if [ -f package.json ]; then
-  # support for 0.9
-  sudo npm install
-else
-  # support for older versions
-  sudo npm install fibers
-  sudo npm install bcrypt
-fi
+# support for 0.9
+sudo npm install --production
