@@ -18,18 +18,10 @@
     db.getSiblingDB("{{dbname}}").createUser({
         user: "{{ dbuser }}",
         pwd: "{{ dbpassword }}",
-        roles: [ { role: "dbAdmin", db: "{{dbname}}" } ]
+        roles: [
+            { role: "dbAdmin", db: "{{dbname}}" },
+            { role: "readWrite", db: "{{dbname}}" },
+            { role: "root", db: "{{dbname}}" }
+        ]
     })
 {% endif %}
-
-
-db.getSiblingDB("admin").createUser({
-    user: "admin",
-    pwd: "t6Qvr58b!FfRsha4g",
-    roles: [
-        "userAdminAnyDatabase",
-        "dbAdminAnyDatabase",
-        "readWriteAnyDatabase",
-        "root"
-    ]
-})

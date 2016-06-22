@@ -4,6 +4,7 @@
 from __future__ import with_statement
 
 import os
+import io
 import datetime
 import commentjson as json
 import argparse
@@ -12,7 +13,7 @@ import ConfigParser
 
 from StringIO import StringIO
 
-from fabric.api import local, run, sudo, settings, abort, env, get
+from fabric.api import local, run, sudo, settings, abort, env, get, hide
 from fabric.contrib.console import confirm
 from fabric.operations import prompt, put, get
 from fabric.contrib.files import exists, upload_template, sed, append
@@ -38,10 +39,29 @@ env.NODE_VERSION = "0.10.44"
 
 """
 
+def dotenv_set(filepath, key, value):
+    sudo(dotenv.get_cli_string(filepath, 'set', key, value), quiet=True)
+
+def dotenv_get(filepath, key=None):
+    out =  sudo(dotenv.get_cli_string(filepath, 'get', key), quiet=True)
+    print out
+    if "UserWarning" in out:
+        return False
+    else:
+        return out[out.index('=')+1:].strip("\"'")
+
 def read(remote_path):
-    fd = StringIO()
-    get(remote_path, fd)
-    return fd.getvalue()
+    with hide('commands'):
+        fd = StringIO()
+        get(remote_path, fd)
+        return fd.getvalue()
+
+
+def read_env_file(filepath):
+    env_file_content = read(filepath)
+    config = ConfigParser.RawConfigParser()
+    config.readfp(io.BytesIO(env_file_content))
+    return config
 
 
 def config_get_domain():
@@ -107,7 +127,7 @@ def which(program):
 
 """
 
-def setup_struct():
+def setup_struct(**kwargs):
     if exists("/opt/%(domain)s" % env):
         return False
     sudo('mkdir -p /var/log/%(domain)s' % env)
@@ -115,14 +135,16 @@ def setup_struct():
     sudo('touch /opt/%(domain)s/.env' % env)
 
 
-def setup_tools():
+def setup_tools(**kwargs):
+
+    # check if all tools are already setup
+    with hide('commands'):
+        sudo('mkdir -p /root/.starbase/')
+        if exists("/root/.starbase/version") and sudo("cat /root/.starbase/version") == RELEASE_VERSION:
+            return
 
     print(blue('Setup some boring unix tools...'))
 
-    sudo('mkdir -p /root/.starbase/')
-
-    if exists("/root/.starbase/version") and sudo("cat /root/.starbase/version") == RELEASE_VERSION:
-        return
 
     sudo('echo "" >> /etc/hosts')
     sudo('echo "127.0.1.1 `hostname`" >> /etc/hosts')
@@ -169,70 +191,91 @@ def setup_mongodb():
     sudo('apt-get -qqy install mongodb-org')
 
     template('cron/mongodb', '/etc/cron.d/mongodb-backup')
-    template('mongo.conf', '/etc/mongo.conf')
+    template('mongod.conf', '/etc/mongod.conf')
 
     mongo_setup_admin_user()
 
     sudo('service mongod start')
 
 
-
-def mongo_command():
-    pass
-
-
-def mongo_setup_admin_user():
+def mongo_setup_admin_user(**kwargs):
 
     env.dbname = "admin"
     env.dbuser = "starbaseAdmin"
     env.dbpassword = generate_password(16)
     sudo('mkdir /root/.starbase/mongo')
-    append('/root/.starbase/mongo/env', "MONGO_ADMIN_USER=starbaseAdmin")
-    append('/root/.starbase/mongo/env', "MONGO_ADMIN_PWD=%(dbpassword)s" % env)
-    print(blue('Setup MONGODB Admin user : %(dbuser)s / %(dbpassword)s' % env))
+    dotenv_set('/root/.starbase/mongo/env', "MONGO_ADMIN_USER", "starbaseAdmin")
+    dotenv_set('/root/.starbase/mongo/env', "MONGO_ADMIN_PWD", env.dbpassword)
+    print(green('Setup MONGODB Admin user : %(dbuser)s / %(dbpassword)s' % env))
     script = "%(dbname)s.%(dbuser)s.js" % env
     template('mongodbcreateuser.js', "/root/.starbase/mongo/" + script)
     sudo('mongo /root/.starbase/mongo/' + script)
 
 
 def mongo_create_db(dbname, dbuser = None, **kwargs):
-    setup_locale()
+
     print(blue('Create MongoDB DB : %s' % dbname))
 
     # env.args
     if not exists('/root/.starbase/mongo'):
         mongo_setup_admin_user()
     else:
-        env_file_content = read('/root/.starbase/mongo/env')
-        config = ConfigParser.RawConfigParser()
-        config.readfp(io.BytesIO(env_file_content))
+        mongousr = dotenv_get('/root/.starbase/mongo/env', "MONGO_ADMIN_USER")
+        mongopwd = dotenv_get('/root/.starbase/mongo/env', "MONGO_ADMIN_PWD")
 
-    env.dbpassword = generate_password(16)
     env.dbname = dbname
 
     if dbuser: env.dbuser = dbuser
     else: env.dbuser = dbname
 
-
-
     script = "%(dbname)s.%(dbuser)s.js" % env
+
+    if exists('/root/.starbase/mongo/%s' % script):
+        abort(red('DB %(dbname)s with user %(dbuser)s already exists' % env))
+
+    env.dbpassword = generate_password(16)
+
     template('mongodbcreateuser.js', "/root/.starbase/mongo/" + script)
 
-    sudo('mongo /root/.starbase/mongo/' + script)
+    sudo('mongo admin -u %s -p %s /root/.starbase/mongo/%s' % (mongousr, mongopwd, script), quiet=True)
 
-    print(blue('Create MongoDB DB %(dbname)s with auth : %(dbuser)s / %(dbpassword)s' % env))
+    print(green('Create MongoDB DB %(dbname)s with associated user :' % env))
+    print(green('   =>  MONGO_URL="mongodb://%(dbuser)s:%(dbpassword)s@localhost/%(dbname)s"' % env))
+    print(green('   => (remote) MONGO_URL="mongodb://%(dbuser)s:%(dbpassword)s@%(host_string)s/%(dbname)s"' % env))
+
     return (env.dbuser, env.dbpassword)
 
 
+def mongo_delete_db(dbname, **kwargs):
 
-def setup_nodejs():
+    params = {
+        "adminusr": dotenv_get('/root/.starbase/mongo/env', "MONGO_ADMIN_USER"),
+        "adminpwd": dotenv_get('/root/.starbase/mongo/env', "MONGO_ADMIN_PWD"),
+        "dbname": dbname
+    }
+
+    if not exists('/root/.starbase/mongo/%(dbname)s.%(dbname)s.js' % params):
+        print(red('DB %(dbname)s does not exists' % params))
+        return
+    if not confirm(blue('Delete DB+user "%s" ?' % dbname), default=False):
+        print('Deletion skipped.')
+        return
+
+    sudo('''mongo admin -u %(adminusr)s -p %(adminpwd)s --eval "db.getSiblingDB('%(dbname)s').dropUser('%(dbname)s');db.getSiblingDB('%(dbname)s').dropDatabase()"''' % params, quiet=True)
+    # print sudo('''mongo admin -u %s -p %s --eval "db.getSiblingDB('%s').dropUser('%s')"''' % (mongousr, mongopwd, dbname, dbname), quiet=True)
+    sudo('rm /root/.starbase/mongo/%(dbname)s.%(dbname)s.js' % params)
+    print(green('DB & user "%s" successfuly deleted' % dbname))
+
+
+
+def setup_nodejs(**kwargs):
     template('install_nodejs.sh', '/root/.starbase/')
     sudo('chmod u+x /root/.starbase/*.sh')
     sudo('/root/.starbase/install_nodejs.sh')
 
 
 
-def setup_nginx():
+def setup_nginx(**kwargs):
 
     sudo('mkdir -p /etc/nginx/')
 
@@ -261,7 +304,9 @@ def setup_nginx():
         sudo('openssl dhparam -out /etc/nginx/dhparams.2048.pem 2048')
 
 
-def setup_ssl_certs():
+def setup_ssl_certs(**kwargs):
+
+    # @todos, check host is correctly hiting the server before launching letsencrypt
 
     print(blue('setup SSL cert generation'))
 
@@ -285,12 +330,11 @@ def setup_ssl_certs():
     sudo('service nginx reload')
 
 
-def setup_vhost():
+def setup_vhost(**kwargs):
     print(green('setup/reload vhosts'))
     setup_struct()
-    dbuser = re.sub('[^\w]', '', env.domain)
-    dbuser, dbpassword = mongo_create_db(dbuser)
-    environment_set_var("MONGO_URL", "mongodb://%s:%s@localhost/%s" % (dbuser, dbpassword, dbuser))
+
+
     env.enable_ssl = exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env)
     template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
@@ -298,6 +342,11 @@ def setup_vhost():
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
     if not exists('/opt/%(domain)s/releases/default' % env):
+        # create default DB & setup environment var for this one
+        dbuser = re.sub('[^\w]', '', env.domain)
+        dbuser, dbpassword = mongo_create_db(dbuser)
+        dotenv_set("MONGO_URL", "mongodb://%s:%s@localhost/%s" % (dbuser, dbpassword, dbuser))
+
         sudo('mkdir -p /opt/%(domain)s/releases/default/bundle' % env)
         template('defaultapp.js', '/opt/%(domain)s/releases/default/bundle/main.js' % env)
         sudo('ln -fs /opt/%(domain)s/releases/default/bundle /opt/%(domain)s/bundle' % env)
@@ -322,35 +371,35 @@ def setup_locale(locale = "en_US", encoding="UTF-8", **kwargs):
     sudo('apt-get install -qqy language-pack-%s-base' % locale[0:2])
     sudo('locale-gen "%s.%s"' % (locale, encoding))
     sudo('dpkg-reconfigure locales')
-    sudo(dotenv.get_cli_string('/etc/environment', 'set', 'LC_ALL', "%s.%s" % (locale, encoding)))
-    sudo(dotenv.get_cli_string('/etc/environment', 'set', 'LANG', "%s.%s" % (locale, encoding)))
-    sudo(dotenv.get_cli_string('/etc/environment', 'set', 'LANG', "%s.%s" % (locale, encoding)))
+    dotenv_set('/etc/environment', 'LC_ALL', "%s.%s" % (locale, encoding))
+    dotenv_set('/etc/environment', 'set', 'LANG', "%s.%s" % (locale, encoding))
+    dotenv_set('/etc/environment', 'set', 'LANG', "%s.%s" % (locale, encoding))
     sudo('export $(cat /etc/environment | xargs)')
-    
+
 
 """
 Setup server for receiving meteor apps
 """
-def setup_meteor():
+def setup_meteor(**kwargs):
 
-    setup_tools()
+    setup_tools(**kwargs)
 
     # Nodejs
     if not which('npm'):
-        setup_nodejs()
+        setup_nodejs(**kwargs)
 
     if not which('mongo'):
-        setup_mongodb()
+        setup_mongodb(**kwargs)
 
     # HTTP frontend
     if not exists('/etc/nginx'):
-        setup_nginx()
+        setup_nginx(**kwargs)
 
-    setup_vhost()
+    setup_vhost(**kwargs)
 
     # SSL certs builder
     if not exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env):
-        setup_ssl_certs()
+        setup_ssl_certs(**kwargs)
 
 
 
@@ -358,7 +407,7 @@ def setup_meteor():
 def generate_password(length = 32):
     if not isinstance(length, int) or length < 8:
         raise ValueError("temp password must have positive length")
-    chars = "!$234679ADEFGHJKLMNPRTUWabdefghijkmnpqrstuwy"
+    chars = "*234679ADEFGHJKLMNPRTUWabdefghijkmnpqrstuwy"
     from os import urandom
     return "".join([chars[ord(c) % len(chars)] for c in urandom(length)])
 
@@ -411,24 +460,20 @@ def develop():
 """
 
 
-def environment_var():
-    setup_tools()
-    setup_struct()
-    if not args.key:
-        return environment_get_all_vars()
-    if not args.value:
-        return environment_get_var(env.args)
+def environment_var(key=None, value=None,**kwargs):
+    setup_tools(**kwargs)
+    setup_struct(**kwargs)
+    f = '/opt/%s/.env' % env.domain
+    if not key:
+        print read(f)
+        return None
+    if not value:
+        print dotenv_get(f, key)
+        return dotenv_get(f, key)
     else:
-        return environment_set_var(env.args)
-
-def environment_get_all_vars():
-    print read('cat /opt/%s/.env' % env.domain)
-
-def environment_get_var(key, **kwargs):
-    print sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'get', key))
-
-def environment_set_var(key, value, **kwargs):
-    sudo(dotenv.get_cli_string('/opt/%s/.env' % env.domain, 'set', key, value))
+        s = dotenv_set(f, key, value)
+        sudo("service %s restart" % env.domain)
+        return s
 
 
 
@@ -450,10 +495,10 @@ def deploy(**kwargs):
 
     print(blue("Start build on " + env.app_local_root))
     local('cd ' + env.app_local_root)
-    local('meteor build . --architecture os.linux.x86_64')
+    local('meteor build .. --architecture os.linux.x86_64')
 
     print(blue("build complete, lets teleport this !"))
-    filename = os.path.basename(env.app_local_root) + '.tar.gz'
+    filename = '../' + os.path.basename(env.app_local_root) + '.tar.gz'
     release_path = '/opt/%(domain)s/releases/%(deployment_id)s' % env
     sudo('mkdir -p %s' % release_path)
     put(env.app_local_root + '/' + filename, release_path + "/" + filename)
@@ -529,10 +574,6 @@ if __name__ == "__main__":
     subparser.add_argument('target', type=str, help='Target where you want to deploy')
     add_base_args(subparser)
 
-    subparser = subparsers.add_parser('restore', help='Restore MongoDB dump to target')
-    subparser.add_argument('mongodumpzip', type=str, help='Target to execute command')
-    add_base_args(subparser)
-
     subparser = subparsers.add_parser('set_locale', help='Run local env regarding settings.json ENV')
     subparser.add_argument('locale', type=str, default="en_GB", help="Locale in format 'en_GB'", nargs="?")
     subparser.add_argument('encoding', type=str, default="UTF-8", help="Encoding in format 'UTF-8'", nargs="?")
@@ -547,10 +588,23 @@ if __name__ == "__main__":
     subparser.add_argument('value', type=str, help='Environment key value', default=None, nargs='?')
     add_base_args(subparser)
 
-    subparser = subparsers.add_parser('create_db', help='Create MongoDB collection and associated user')
+    subparser = subparsers.add_parser('db_create', help='Create MongoDB db and associated user as db owner')
     subparser.add_argument('dbname', type=str, help='database name')
     subparser.add_argument('dbuser', type=str, help='database user, same as db if not provided', default=None, nargs="?")
     add_base_args(subparser)
+
+    subparser = subparsers.add_parser('db_delete', help='Delete MongoDB database and associated user')
+    subparser.add_argument('dbname', type=str, help='database name')
+    add_base_args(subparser)
+
+    subparser = subparsers.add_parser('db_dump', help='Restore MongoDB dump to target')
+    subparser.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    add_base_args(subparser)
+
+    subparser = subparsers.add_parser('db_restore', help='Restore MongoDB dump to target')
+    subparser.add_argument('mongodumpzip', type=str, help='Target to execute command')
+    add_base_args(subparser)
+
 
     args = parser.parse_args()
 
@@ -560,9 +614,10 @@ if __name__ == "__main__":
         "deploy": deploy,
         "rollback": rollback,
         "env": environment_var,
-        "mongo_backup": mongo_backup,
-        "mongo_restore": mongo_restore,
-        "create_db": mongo_create_db,
+        "db_dump": mongo_backup,
+        "db_restore": mongo_restore,
+        "db_create": mongo_create_db,
+        "db_delete": mongo_delete_db,
         "set_locale": setup_locale,
     }
 
@@ -605,6 +660,9 @@ if __name__ == "__main__":
 
     if not settings.has_key('env'):
         settings['env'] = {}
+
+    if target.has_key('env'):
+        settings['env'].update(target['env'])
 
     env.settings = settings
     env.app_node_port = 8000 + (binascii.crc32(env.domain) * -1)%1000
