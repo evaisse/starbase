@@ -20,8 +20,7 @@
         pwd: "{{ dbpassword }}",
         roles: [
             { role: "dbAdmin", db: "{{dbname}}" },
-            { role: "readWrite", db: "{{dbname}}" },
-            { role: "root", db: "{{dbname}}" }
+            { role: "readWrite", db: "{{dbname}}" }
         ]
     })
 {% endif %}
