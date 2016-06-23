@@ -59,8 +59,18 @@ def read(remote_path):
 
 def read_env_file(filepath):
     env_file_content = read(filepath)
-    config = ConfigParser.RawConfigParser()
-    config.readfp(io.BytesIO(env_file_content))
+    config = parse_dotenv(io.BytesIO(env_file_content))
+    return config
+
+def parse_dotenv(f):
+    config = {}
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        k, v = line.split('=', 1)
+        v = v.strip("'").strip('"')
+        config[k] = v
     return config
 
 
@@ -334,13 +344,41 @@ def setup_vhost(**kwargs):
     print(green('setup/reload vhosts'))
     setup_struct()
 
-
+    env.app_pwd = '/opt/%(domain)s/releases/default/bundle' % env
     env.enable_ssl = exists('/etc/letsencrypt/live/%(domain)s/fullchain.pem' % env)
+
+    # Setup envs
+    env.env_vars = {
+        "PATH": "/opt/local/bin:/opt/local/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NODE_PATH": "/usr/lib/nodejs:/usr/lib/node_modules:/usr/share/javascript",
+        # set to home directory of the user Meteor will be running as
+        "PWD": "%(app_pwd)s" % env,
+        "HOME": "%(app_pwd)s" % env,
+        "ROOT_URL": "https://%(domain)s" % env,
+        # default bind email
+        "MAIL_URL": "smtp://localhost",
+        # leave as 127.0.0.1 for security
+        "BIND_IP": "127.0.0.1",
+        # the port nginx is proxying requests to
+        "PORT": "%(app_node_port)s" % env,
+        # this allows Meteor to figure out correct IP address of visitors
+        "HTTP_FORWARDED_COUNT": "1",
+        # meteor basic settings
+        "METEOR_SETTINGS": "{}", # "$(cat /opt/%(domain)s/releases/latest/bundle/settings.json)" % env,
+    }
+
+    config = read_env_file("/opt/%(domain)s/.env" % env)
+    env.env_vars.update(env.settings['env'])
+    env.env_vars.update(config)
+
     template('nginx.vhost.conf', '/etc/nginx/sites-available/%(domain)s.conf' % env)
     template('upstart.conf', '/etc/init/%(domain)s.conf' % env)
+    template('supervisord-program.conf', '/etc/supervisor/conf.d/%(domain)s.conf' % env)
     template('logrotate.conf', '/etc/logrotate.d/%(domain)s.conf' % env)
+
     sudo('ln -fs /etc/nginx/sites-available/%(domain)s.conf /etc/nginx/sites-enabled/' % env)
     sudo('service nginx reload')
+
     if not exists('/opt/%(domain)s/releases/default' % env):
         # create default DB & setup environment var for this one
         dbuser = re.sub('[^\w]', '', env.domain)
@@ -349,7 +387,7 @@ def setup_vhost(**kwargs):
 
         sudo('mkdir -p /opt/%(domain)s/releases/default/bundle' % env)
         template('defaultapp.js', '/opt/%(domain)s/releases/default/bundle/main.js' % env)
-        sudo('ln -fs /opt/%(domain)s/releases/default/bundle /opt/%(domain)s/bundle' % env)
+        sudo('ln -fs /opt/%(domain)s/releases/default/bundle /opt/%(domain)s/releases/latest' % env)
     sudo('service %(domain)s restart' % env)
 
 
@@ -463,6 +501,7 @@ def develop():
 def environment_var(key=None, value=None,**kwargs):
     setup_tools(**kwargs)
     setup_struct(**kwargs)
+    setup_vhost(**kwargs)
     f = '/opt/%s/.env' % env.domain
     if not key:
         print read(f)
